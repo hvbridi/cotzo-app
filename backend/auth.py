@@ -3,9 +3,14 @@ from jose import jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 # Configurações de Segurança
-SECRET_KEY = "mudar_senha_dps_pimpolhetes"
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("Faltou configurar a SECRET_KEY no arquivo .env!")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
