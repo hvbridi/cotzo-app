@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terra Nova AgroCapital - Acesso ao Sistema</title>
+
+    <!-- Tailwind CSS CDN com Plugins -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <!-- Fontes Google e Material Symbols Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400..900&family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1" rel="stylesheet" />
+
+    <!-- Configuração de Cores e Estilos Customizados do Stitch -->
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-tertiary-fixed-variant": "#554020",
+              "on-surface-variant": "#4a4e4a",
+              "surface-container": "#f0ece4",
+              "primary-fixed": "#c8e8d0",
+              "on-secondary-fixed": "#1e1a13",
+              "on-secondary-fixed-variant": "#4a4538",
+              "surface-container-lowest": "#ffffff",
+              "secondary-container": "#f0e8db",
+              "on-primary-fixed-variant": "#2a6038",
+              "surface-variant": "#e4e0d8",
+              "surface-container-highest": "#e4e0d8",
+              "surface-bright": "#faf6f0",
+              "on-secondary-container": "#5e5548",
+              "background": "#faf6f0",
+              "surface-tint": "#4a7c59",
+              "tertiary-container": "#c4a66a",
+              "secondary": "#6b6358",
+              "surface": "#faf6f0",
+              "secondary-fixed": "#f0e8db",
+              "inverse-surface": "#2e3230",
+              "inverse-primary": "#8ecf9e",
+              "surface-dim": "#dbd7cf",
+              "surface-container-low": "#f5f1ea",
+              "on-tertiary-container": "#554020",
+              "on-secondary": "#ffffff",
+              "primary-fixed-dim": "#8ecf9e",
+              "primary-container": "#78a886",
+              "secondary-fixed-dim": "#d4ccbf",
+              "on-primary-fixed": "#002110",
+              "error": "#b83230",
+              "surface-container-high": "#eae6de",
+              "outline-variant": "#c4c8bc",
+              "error-container": "#ffdad8",
+              "primary": "#4a7c59",
+              "tertiary-fixed": "#f8e0a8",
+              "on-background": "#2e3230",
+              "on-tertiary-fixed": "#221a05",
+              "inverse-on-surface": "#f5f0e8",
+              "tertiary-fixed-dim": "#dcc48e",
+              "on-error": "#ffffff",
+              "on-tertiary": "#ffffff",
+              "outline": "#74796e",
+              "on-surface": "#2e3230",
+              "tertiary": "#705c30",
+              "on-primary-container": "#d8f0de",
+              "on-primary": "#ffffff",
+              "on-error-container": "#690005"
+            },
+            fontFamily: {
+              headline: ["Literata", "serif"],
+              display: ["Literata", "serif"],
+              body: ["Nunito Sans", "sans-serif"],
+              label: ["Nunito Sans", "sans-serif"]
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { font-family: 'Nunito Sans', sans-serif; background-color: #faf6f0; color: #2e3230; line-height: 1.6; }
+      h1, h2, h3, h4, h5, h6, .font-headline { font-family: 'Literata', serif; }
+      .soft-shadow { box-shadow: 0 8px 32px rgba(46, 50, 48, 0.08); }
+      .strong-shadow { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2); }
+      .glass-card {
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
