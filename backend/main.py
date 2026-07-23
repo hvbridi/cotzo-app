@@ -2,6 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm # <-- IMPORTAÇÃO NOVA AQUI!
 from sqlmodel import Session, select
 from contextlib import asynccontextmanager
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+
 
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato
@@ -119,3 +123,41 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
 @app.get("/contratos/")
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Contrato)).all()
+
+
+@app.get("/exportar-excel/")
+def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    # 1. Pega tudo do banco de dados
+    usuarios = db.exec(select(Usuario)).all()
+    produtores = db.exec(select(Produtor)).all()
+    fazendas = db.exec(select(Fazenda)).all()
+    empresas = db.exec(select(Empresa)).all()
+    contratos = db.exec(select(Contrato)).all()
+
+    # 2. Converte para o formato de Tabela
+    df_usuarios = pd.DataFrame([u.model_dump() for u in usuarios])
+    df_produtores = pd.DataFrame([p.model_dump() for p in produtores])
+    df_fazendas = pd.DataFrame([f.model_dump() for f in fazendas])
+    df_empresas = pd.DataFrame([e.model_dump() for e in empresas])
+    df_contratos = pd.DataFrame([c.model_dump() for c in contratos])
+
+    # Segurança: NUNCA exporte as senhas!
+    if not df_usuarios.empty and 'senha_hash' in df_usuarios.columns:
+        df_usuarios = df_usuarios.drop(columns=['senha_hash'])
+
+    # 3. Prepara o arquivo Excel na memória do servidor
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_contratos.to_excel(writer, sheet_name='Contratos', index=False)
+        df_produtores.to_excel(writer, sheet_name='Produtores', index=False)
+        df_fazendas.to_excel(writer, sheet_name='Fazendas', index=False)
+        df_empresas.to_excel(writer, sheet_name='Empresas', index=False)
+        df_usuarios.to_excel(writer, sheet_name='Usuários', index=False)
+
+    # 4. Finaliza e envia o arquivo para download
+    output.seek(0)
+    return StreamingResponse(
+        output, 
+        headers={'Content-Disposition': 'attachment; filename="banco_de_dados_corretora.xlsx"'}, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
