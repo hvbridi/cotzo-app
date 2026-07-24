@@ -45,7 +45,19 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # 👤 A. USUÁRIOS (Corretores)
 # ==========================================
 @app.post("/usuarios/")
-def criar_usuario(usuario: Usuario, db: Session = Depends(get_session)):
+def criar_usuario(
+    usuario: Usuario, 
+    db: Session = Depends(get_session), 
+    usuario_logado=Depends(usuario_atual) # 1. Adiciona o cadeado no Swagger!
+):
+    
+    # 2. A Fechadura: Verifica se quem está tentando criar a conta tem o cargo correto
+    if usuario_logado.cargo != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Apenas administradores podem criar novos usuários."
+        )
+
     # Criptografa a senha antes de salvar no banco! (NUNCA salvar a senha limpa)
     usuario.senha_hash = obter_hash_senha(usuario.senha_hash)
     db.add(usuario)
