@@ -83,7 +83,7 @@ def criar_usuario(
 ):
     
     # 2. A Fechadura: Verifica se quem está tentando criar a conta tem o cargo correto
-    if usuario_logado.cargo != "admin":
+    if usuario_logado['cargo'] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso negado. Apenas administradores podem criar novos usuários."
