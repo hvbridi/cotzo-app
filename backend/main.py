@@ -5,7 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
-
+import requests
+from fastapi import BackgroundTasks
+import os
+from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import List
 
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
@@ -13,6 +18,31 @@ from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta,
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
 from database import criar_tabelas, get_session
+
+load_dotenv()
+
+EVOLUTION_URL = "https://evolution-api-production-aeca.up.railway.app"
+EVOLUTION_API_KEY = os.getenv('EVOLUTION_API_KEY')
+INSTANCIA = "teste"
+
+def disparar_whatsapp_comprador(telefone: str, mensagem: str):
+    url = f"{EVOLUTION_URL}/message/sendText/{INSTANCIA}"
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "number": telefone,
+        "text": mensagem,
+        "delay": 1000,
+        "presence": "composing"
+    }
+    try:
+        resposta = requests.post(url, headers=headers, json=payload)
+        return resposta.status_code in [200, 201]
+    except Exception as e:
+        print(f"Erro ao enviar WhatsApp: {e}")
+        return False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -174,30 +204,73 @@ def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
+# Modelo temporário para receber os dados do front-end/Swagger incluindo os compradores
+class OfertaCreate(BaseModel):
+    produtor_id: int
+    fazenda_id: int
+    volume: int
+    preco: float
+    moeda: str = "BRL"
+    data_entrega_embarque: str # ou date
+    compradores_ids: List[int] = [] # <--- Aqui você seleciona quais IDs de compradores vão receber
+
 @app.post("/ofertas/", response_model=Oferta)
-def criar_oferta(oferta: Oferta, session: Session = Depends(get_session)):
+def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),usuario_logado=Depends(usuario_atual)):
     """
-    Cria uma nova oferta verificando se a fazenda realmente pertence ao produtor.
+    Cria uma nova oferta, valida a fazenda e envia o WhatsApp automaticamente 
+    para os compradores selecionados na lista 'compradores_ids'.
     """
-    # 1. Busca a fazenda no banco de dados
-    fazenda_db = session.get(Fazenda, oferta.fazenda_id)
-    
+    # 1. Valida se a fazenda existe
+    fazenda_db = session.get(Fazenda, dados.fazenda_id)
     if not fazenda_db:
         raise HTTPException(status_code=404, detail="Fazenda não encontrada no sistema.")
         
-    # 2. Trava de Segurança: A fazenda é do produtor que está fazendo a oferta?
-    if fazenda_db.produtor_id != oferta.produtor_id:
+    # 2. Trava de segurança: A fazenda pertence ao produtor?
+    if fazenda_db.produtor_id != dados.produtor_id:
         raise HTTPException(
             status_code=403, 
             detail="Operação bloqueada: Esta fazenda não pertence ao produtor informado."
         )
         
-    # 3. Se passou pelas regras, salva no banco!
-    session.add(oferta)
-    session.commit()
-    session.refresh(oferta) # Atualiza o objeto para pegar o ID gerado
+    # 3. Cria o objeto Oferta para salvar no banco
+    nova_oferta = Oferta(
+        produtor_id=dados.produtor_id,
+        fazenda_id=dados.fazenda_id,
+        volume=dados.volume,
+        preco=dados.preco,
+        moeda=dados.moeda,
+        data_entrega_embarque=dados.data_entrega_embarque
+    )
     
-    return oferta
+    session.add(nova_oferta)
+    session.commit()
+    session.refresh(nova_oferta)
+    
+    # 4. DISPARO AUTOMÁTICO PARA OS COMPRADORES SELECIONADOS
+    if dados.compradores_ids:
+        # Pega o nome do produtor e da fazenda para deixar a mensagem bonita
+        produtor_nome = fazenda_db.produtor.nome
+        fazenda_nome = fazenda_db.nome
+        
+        # Monta o texto do WhatsApp
+        texto_mensagem = (
+            f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
+            f"👤 *Produtor:* {produtor_nome}\n"
+            f"🚜 *Fazenda:* {fazenda_nome}\n"
+            f"📦 *Volume:* {dados.volume:,} sacas\n"
+            f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
+            f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
+            f"Responda esta mensagem para negociar!"
+        )
+        
+        # Busca cada comprador no banco pelo ID enviado na lista
+        for comprador_id in dados.compradores_ids:
+            comprador = session.get(Comprador, comprador_id)
+            if comprador and comprador.telefone:
+                # Dispara o WhatsApp para o telefone do comprador
+                disparar_whatsapp_comprador(comprador.telefone, texto_mensagem)
+
+    return nova_oferta
 
 @app.get("/ofertas/", response_model=list[Oferta])
 def listar_ofertas(session: Session = Depends(get_session)):
