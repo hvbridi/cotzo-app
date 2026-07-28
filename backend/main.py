@@ -1,17 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm # <-- IMPORTAÇÃO NOVA AQUI!
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 from contextlib import asynccontextmanager
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
 import requests
-from fastapi import BackgroundTasks
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import secrets
+
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
 # Nossas funções de segurança
@@ -254,12 +255,12 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),us
         
         # Monta o texto do WhatsApp
         texto_mensagem = (
-            f"*NOVA OFERTA DISPONÍVEL* \n\n"
-            f"*Produtor:* {produtor_nome}\n"
-            f"*Fazenda:* {fazenda_nome}\n"
-            f"*Volume:* {dados.volume:,} sacas\n"
-            f"*Preço:* {dados.moeda} {dados.preco:,.2f}\n"
-            f"*Embarque:* {dados.data_entrega_embarque}\n\n"
+            f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
+            f"👤 *Produtor:* {produtor_nome}\n"
+            f"🚜 *Fazenda:* {fazenda_nome}\n"
+            f"📦 *Volume:* {dados.volume:,} sacas\n"
+            f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
+            f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
             f"Responda esta mensagem para negociar!"
         )
         
@@ -302,3 +303,56 @@ def listar_compradores(session: Session = Depends(get_session)):
     """
     compradores = session.exec(select(Comprador)).all()
     return compradores
+
+@app.post("/esqueci-senha")
+def esqueci_senha(email: str, db: Session = Depends(get_session)):
+    # 1. Busca o usuário pelo e-mail
+    usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
+    if not usuario:
+        # Por segurança, geralmente retornamos sucesso mesmo se o e-mail não existir 
+        # para evitar que descubram quais e-mails estão cadastrados no sistema.
+        return {"msg": "Se o e-mail estiver cadastrado, você receberá as instruções."}
+    
+    # 2. Gera um token seguro e único
+    token_recuperacao = secrets.token_urlsafe(32)
+    
+    # 3. Define a validade (ex: 15 minutos a partir de agora)
+    usuario.reset_token = token_recuperacao
+    usuario.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
+    
+    db.add(usuario)
+    db.commit()
+    
+    # 4. Enviar o token (Aqui você pode mandar por e-mail ou disparar no WhatsApp dele se ele tiver telefone cadastrado!)
+    # Exemplo de link que iria para o front-end: https://seu-site.com/redefinir?token=token_recuperacao
+    print(f"Token de recuperação para {email}: {token_recuperacao}")
+    
+    return {"msg": "Se o e-mail estiver cadastrado, você receberá as instruções."}
+
+class RedefinirSenhaRequest(BaseModel):
+    token: str
+    nova_senha: str
+
+@app.post("/redefinir-senha")
+def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_session)):
+    # 1. Busca o usuário que possui esse token
+    usuario = db.exec(select(Usuario).where(Usuario.reset_token == dados.token)).first()
+    
+    # 2. Valida se o token existe e se não expirou
+    if not usuario or not usuario.reset_token_expires:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+    
+    if datetime.utcnow() > usuario.reset_token_expires:
+        raise HTTPException(status_code=400, detail="O token de recuperação expirou.")
+    
+    # 3. Criptografa a nova senha usando a sua função existente
+    usuario.senha_hash = obter_hash_senha(dados.nova_senha)
+    
+    # 4. Limpa o token para que ele não possa ser reutilizado
+    usuario.reset_token = None
+    usuario.reset_token_expires = None
+    
+    db.add(usuario)
+    db.commit()
+    
+    return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}

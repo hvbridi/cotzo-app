@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 
 # 1. Tabela de Usuários (Corretores e Admins)
 class Usuario(SQLModel, table=True):
@@ -10,6 +10,9 @@ class Usuario(SQLModel, table=True):
     senha_hash: str
     cargo: str = Field(default="corretor") # "corretor" ou "admin"
     comissao_padrao: Optional[float] = Field(default=None)
+
+    reset_token: Optional[str] = Field(default=None)
+    reset_token_expires: Optional[datetime] = Field(default=None)
     
     # Relacionamento: Um corretor pode ter vários contratos
     contratos: List["Contrato"] = Relationship(back_populates="corretor")
