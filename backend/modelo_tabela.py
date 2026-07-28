@@ -14,37 +14,48 @@ class Usuario(SQLModel, table=True):
     # Relacionamento: Um corretor pode ter vários contratos
     contratos: List["Contrato"] = Relationship(back_populates="corretor")
 
-# 2. Tabela de Produtores (Vendedores)
 class Produtor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    nome_razao: str
-    cpf_cnpj: str = Field(unique=True, index=True)
-    inscricao_estadual: Optional[str] = None
-    telefone: Optional[str] = None
-    whatsapp: str # Muito importante para o envio automático
-    email: Optional[str] = None
-    endereco: Optional[str] = None
-    cep: Optional[str] = None
-    cidade: str
-    estado: str
+    nome: str
+    whatsapp: str
     
-    # Relacionamento: Um produtor tem várias fazendas e contratos
+    # Vínculos
     fazendas: List["Fazenda"] = Relationship(back_populates="produtor")
-    contratos: List["Contrato"] = Relationship(back_populates="produtor")
+    ofertas: List["Oferta"] = Relationship(back_populates="produtor")
+    contratos: List["Contrato"] = Relationship(back_populates="produtor") # <- CORREÇÃO AQUI
 
-# 3. Tabela de Fazendas (Ligadas ao Produtor)
 class Fazenda(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nome: str
-    inscricao_estadual: Optional[str] = None
-    cidade: str
-    estado: str
     
-    # A Mágica do Select Dinâmico: Chave Estrangeira ligando ao Produtor
+    # Dependência de criação (A fazenda não existe sem um produtor)
     produtor_id: int = Field(foreign_key="produtor.id")
     produtor: Optional[Produtor] = Relationship(back_populates="fazendas")
     
-    contratos: List["Contrato"] = Relationship(back_populates="fazenda_origem")
+    # Vínculos
+    ofertas: List["Oferta"] = Relationship(back_populates="fazenda")
+    contratos: List["Contrato"] = Relationship(back_populates="fazenda_origem") # <- CORREÇÃO AQUI
+
+# ---------------------------------------------------------
+# 2. OBJETO: OFERTA
+# ---------------------------------------------------------
+
+class Oferta(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # DEPENDÊNCIAS (Chaves Estrangeiras)
+    produtor_id: int = Field(foreign_key="produtor.id", index=True)
+    fazenda_id: int = Field(foreign_key="fazenda.id", index=True)
+    
+    # DADOS DA OFERTA
+    volume: int = Field(description="Quantidade em sacas (ex: 5000)")
+    preco: float = Field(description="Preço ofertado por saca")
+    moeda: str = Field(default="BRL", max_length=3, description="Moeda da negociação, ex: BRL, USD")
+    data_entrega_embarque: date = Field(description="Data limite ou programada para entrega/embarque")
+    
+    # RELACIONAMENTOS ORM
+    produtor: Optional[Produtor] = Relationship(back_populates="ofertas")
+    fazenda: Optional[Fazenda] = Relationship(back_populates="ofertas")
 
 # 4. Tabela de Empresas Compradoras (Tradings)
 class Empresa(SQLModel, table=True):
