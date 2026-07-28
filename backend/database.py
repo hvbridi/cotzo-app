@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 # Importamos os modelos para que o SQLModel saiba o que precisa criar
-from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato
+from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta
 
 # Carrega as senhas do arquivo .env silenciosamente
 load_dotenv()
