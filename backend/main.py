@@ -11,7 +11,7 @@ import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
-
+from datetime import date, datetime
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
 # Nossas funções de segurança
@@ -211,7 +211,7 @@ class OfertaCreate(BaseModel):
     volume: int
     preco: float
     moeda: str = "BRL"
-    data_entrega_embarque: str # ou date
+    data_entrega_embarque: date # ou date
     compradores_ids: List[int] = [] # <--- Aqui você seleciona quais IDs de compradores vão receber
 
 @app.post("/ofertas/", response_model=Oferta)
