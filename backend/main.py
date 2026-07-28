@@ -254,12 +254,12 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),us
         
         # Monta o texto do WhatsApp
         texto_mensagem = (
-            f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
-            f"👤 *Produtor:* {produtor_nome}\n"
-            f"🚜 *Fazenda:* {fazenda_nome}\n"
-            f"📦 *Volume:* {dados.volume:,} sacas\n"
-            f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
-            f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
+            f"*NOVA OFERTA DISPONÍVEL* \n\n"
+            f"*Produtor:* {produtor_nome}\n"
+            f"*Fazenda:* {fazenda_nome}\n"
+            f"*Volume:* {dados.volume:,} sacas\n"
+            f"*Preço:* {dados.moeda} {dados.preco:,.2f}\n"
+            f"*Embarque:* {dados.data_entrega_embarque}\n\n"
             f"Responda esta mensagem para negociar!"
         )
         
