@@ -8,7 +8,7 @@ import pandas as pd
 
 
 # Nossas tabelas
-from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato
+from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta
 # Nossas funções de segurança
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
@@ -173,3 +173,36 @@ def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado
         headers={'Content-Disposition': 'attachment; filename="banco_de_dados_corretora.xlsx"'}, 
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+@app.post("/ofertas/", response_model=Oferta, tags=["Ofertas"])
+def criar_oferta(oferta: Oferta, session: Session = Depends(get_session)):
+    """
+    Cria uma nova oferta verificando se a fazenda realmente pertence ao produtor.
+    """
+    # 1. Busca a fazenda no banco de dados
+    fazenda_db = session.get(Fazenda, oferta.fazenda_id)
+    
+    if not fazenda_db:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada no sistema.")
+        
+    # 2. Trava de Segurança: A fazenda é do produtor que está fazendo a oferta?
+    if fazenda_db.produtor_id != oferta.produtor_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Operação bloqueada: Esta fazenda não pertence ao produtor informado."
+        )
+        
+    # 3. Se passou pelas regras, salva no banco!
+    session.add(oferta)
+    session.commit()
+    session.refresh(oferta) # Atualiza o objeto para pegar o ID gerado
+    
+    return oferta
+
+@app.get("/ofertas/", response_model=list[Oferta], tags=["Ofertas"])
+def listar_ofertas(session: Session = Depends(get_session)):
+    """
+    Lista todas as ofertas ativas no sistema.
+    """
+    ofertas = session.exec(select(Oferta)).all()
+    return ofertas
