@@ -8,7 +8,7 @@ import pandas as pd
 
 
 # Nossas tabelas
-from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta
+from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
 # Nossas funções de segurança
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
@@ -174,7 +174,7 @@ def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
-@app.post("/ofertas/", response_model=Oferta, tags=["Ofertas"])
+@app.post("/ofertas/", response_model=Oferta)
 def criar_oferta(oferta: Oferta, session: Session = Depends(get_session)):
     """
     Cria uma nova oferta verificando se a fazenda realmente pertence ao produtor.
@@ -199,10 +199,33 @@ def criar_oferta(oferta: Oferta, session: Session = Depends(get_session)):
     
     return oferta
 
-@app.get("/ofertas/", response_model=list[Oferta], tags=["Ofertas"])
+@app.get("/ofertas/", response_model=list[Oferta])
 def listar_ofertas(session: Session = Depends(get_session)):
     """
     Lista todas as ofertas ativas no sistema.
     """
     ofertas = session.exec(select(Oferta)).all()
     return ofertas
+
+@app.post("/compradores/", response_model=Comprador)
+def criar_comprador(comprador: Comprador, session: Session = Depends(get_session)):
+    """
+    Cadastra um novo comprador vinculado a uma empresa (Trading).
+    """
+    # Validação opcional: verificar se a empresa realmente existe
+    empresa_db = session.get(Empresa, comprador.empresa_id)
+    if not empresa_db:
+        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada.")
+        
+    session.add(comprador)
+    session.commit()
+    session.refresh(comprador)
+    return comprador
+
+@app.get("/compradores/", response_model=list[Comprador])
+def listar_compradores(session: Session = Depends(get_session)):
+    """
+    Lista todos os compradores cadastrados.
+    """
+    compradores = session.exec(select(Comprador)).all()
+    return compradores

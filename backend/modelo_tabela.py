@@ -69,6 +69,17 @@ class Empresa(SQLModel, table=True):
     endereco: Optional[str] = None
     
     contratos: List["Contrato"] = Relationship(back_populates="empresa_compradora")
+    compradores: List["Comprador"] = Relationship(back_populates="empresa")
+
+class Comprador(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    nome: str
+    email: str = Field(unique=True, index=True)
+    telefone: str
+    
+    # Relação com a Empresa (Chave Estrangeira)
+    empresa_id: int = Field(foreign_key="empresa.id", index=True)
+    empresa: Optional[Empresa] = Relationship(back_populates="compradores")
 
 # 5. O Coração do Sistema: Contratos de Fechamento
 class Contrato(SQLModel, table=True):
