@@ -4,7 +4,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   return (
-    <div className="bg-background text-on-background antialiased min-h-screen flex">
+    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
       {/* SideNavBar */}
       <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-8 px-2 pt-4">
@@ -23,10 +23,11 @@ export default function Dashboard() {
           </p>
         </div>
 
+        {/* Links de Navegação com Animações Ativas */}
         <nav className="flex-1 space-y-1">
           <Link
             to="/dashboard"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span
               className="material-symbols-outlined mr-3"
@@ -38,28 +39,28 @@ export default function Dashboard() {
           </Link>
           <Link
             to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
           </Link>
           <Link
             to="/cadastros"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
           </Link>
           <Link
             to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
           </Link>
           <Link
             to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
@@ -69,14 +70,14 @@ export default function Dashboard() {
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
           <a
             href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">help</span>
             Suporte
           </a>
           <button
             onClick={() => navigate('/')}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform text-left cursor-pointer"
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
             Sair
@@ -84,7 +85,9 @@ export default function Dashboard() {
         </div>
       </aside>
 
+      {/* Main Wrapper */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-72">
+        {/* TopAppBar */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -93,17 +96,17 @@ export default function Dashboard() {
                   search
                 </span>
                 <input
-                  className="w-full bg-surface-container rounded-full py-1.5 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary"
+                  className="w-full bg-surface-container rounded-full py-1.5 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary focus:outline-none transition-all"
                   placeholder="Buscar..."
                   type="text"
                 />
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
+              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low transition-opacity active:opacity-80">
                 <span className="material-symbols-outlined">notifications</span>
               </button>
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
+              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low transition-opacity active:opacity-80">
                 <span className="material-symbols-outlined">settings</span>
               </button>
               <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
@@ -117,7 +120,9 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {/* Main Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto">
+          {/* Welcome Header */}
           <div className="mb-8">
             <h2 className="text-3xl font-headline font-semibold text-on-background mb-1">
               Bem-vindo, João Silva
@@ -125,8 +130,10 @@ export default function Dashboard() {
             <p className="text-secondary text-lg">12 de Outubro de 2023</p>
           </div>
 
+          {/* KPI Bento Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-colors">
+            {/* Card 1 */}
+            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-secondary-container text-on-secondary-container rounded-lg">
                   <span
@@ -147,7 +154,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-colors">
+            {/* Card 2 */}
+            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-primary-container text-on-primary-container rounded-lg">
                   <span
@@ -168,7 +176,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-colors">
+            {/* Card 3 */}
+            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-tertiary-container text-on-tertiary-container rounded-lg">
                   <span
@@ -189,7 +198,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-colors">
+            {/* Card 4 */}
+            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-error-container text-on-error-container rounded-lg">
                   <span
@@ -211,6 +221,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Table Section */}
           <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
             <div className="px-6 py-5 border-b border-outline-variant/20 flex justify-between items-center bg-surface-container-lowest">
               <h3 className="text-xl font-headline font-semibold text-on-surface">
