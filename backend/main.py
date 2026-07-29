@@ -26,6 +26,7 @@ EVOLUTION_URL = "https://evolution-api-production-aeca.up.railway.app"
 EVOLUTION_API_KEY = os.getenv('EVOLUTION_API_KEY')
 INSTANCIA = "teste"
 
+
 def disparar_whatsapp_comprador(telefone: str, mensagem: str):
     url = f"{EVOLUTION_URL}/message/sendText/{INSTANCIA}"
     headers = {
@@ -308,26 +309,34 @@ def listar_compradores(session: Session = Depends(get_session)):
 def esqueci_senha(email: str, db: Session = Depends(get_session)):
     # 1. Busca o usuário pelo e-mail
     usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
+    
     if not usuario:
-        # Por segurança, geralmente retornamos sucesso mesmo se o e-mail não existir 
-        # para evitar que descubram quais e-mails estão cadastrados no sistema.
-        return {"msg": "Se o e-mail estiver cadastrado, você receberá as instruções."}
+        return {"msg": "Se o e-mail estiver cadastrado, as instruções serão enviadas."}
+        
+    # 2. Segurança: Verifica se o usuário tem um WhatsApp cadastrado no banco
+    if not usuario.telefone:
+        raise HTTPException(status_code=400, detail="Este usuário não possui um telefone cadastrado para receber o token. Contate o administrador.")
     
-    # 2. Gera um token seguro e único
+    # 3. Gera um token seguro e único e define a validade (15 minutos)
     token_recuperacao = secrets.token_urlsafe(32)
-    
-    # 3. Define a validade (ex: 15 minutos a partir de agora)
     usuario.reset_token = token_recuperacao
     usuario.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
     
     db.add(usuario)
     db.commit()
     
-    # 4. Enviar o token (Aqui você pode mandar por e-mail ou disparar no WhatsApp dele se ele tiver telefone cadastrado!)
-    # Exemplo de link que iria para o front-end: https://seu-site.com/redefinir?token=token_recuperacao
-    print(f"Token de recuperação para {email}: {token_recuperacao}")
+    # 4. DISPARO DO WHATSAPP (Usando a sua função já existente da Evolution API)
+    texto_whatsapp = (
+        f"🔐 *Recuperação de Senha*\n\n"
+        f"Olá {usuario.nome}, você solicitou a redefinição de senha no sistema.\n\n"
+        f"Use o token abaixo para cadastrar sua nova senha:\n\n"
+        f"*{token_recuperacao}*\n\n"
+        f"⏳ _Este token é válido por 15 minutos._"
+    )
     
-    return {"msg": "Se o e-mail estiver cadastrado, você receberá as instruções."}
+    disparar_whatsapp_comprador(usuario.telefone, texto_whatsapp)
+    
+    return {"msg": "As instruções foram enviadas para o seu WhatsApp cadastrado!"}
 
 class RedefinirSenhaRequest(BaseModel):
     token: str
