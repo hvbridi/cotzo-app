@@ -365,3 +365,17 @@ def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_sess
     db.commit()
     
     return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}
+
+@app.get("/conectar-whatsapp")
+def conectar_whatsapp():
+    """Rota temporária para gerar o QR Code do WhatsApp"""
+    url = f"{EVOLUTION_URL}/instance/connect/{INSTANCIA}"
+    headers = {
+        "apikey": EVOLUTION_API_KEY
+    }
+    
+    try:
+        resposta = requests.get(url, headers=headers)
+        return resposta.json()
+    except Exception as e:
+        return {"erro": str(e)}
