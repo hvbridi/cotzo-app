@@ -77,7 +77,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # ==========================================
 # 👤 A. USUÁRIOS (Corretores)
 # ==========================================
-@app.post("/usuarios/", tags=["Usuarios"])
+@app.post("/usuarios/", tags=["Usuario"])
 def criar_usuario(
     usuario: Usuario, 
     db: Session = Depends(get_session), 
@@ -103,6 +103,39 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
     usuarios = db.exec(select(Usuario)).all()
     return usuarios
 
+@app.put("/usuarios/{usuario_id}", tags=["Usuario"])
+def atualizar_usuario(usuario_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado['cargo'] != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar usuários.")
+        
+    usuario = db.get(Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(usuario, key) and key != "id":
+            if key == "senha_hash": # Se estiver mudando a senha, criptografa de novo
+                value = obter_hash_senha(value)
+            setattr(usuario, key, value)
+            
+    db.add(usuario)
+    db.commit()
+    db.refresh(usuario)
+    return {"msg": "Usuário atualizado!", "dados": usuario}
+
+@app.delete("/usuarios/{usuario_id}", tags=["Usuario"])
+def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado['cargo'] != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem deletar usuários.")
+        
+    usuario = db.get(Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        
+    db.delete(usuario)
+    db.commit()
+    return {"msg": "Usuário deletado com sucesso."}
+
 
 # ==========================================
 # 🌾 B. PRODUTORES
@@ -117,6 +150,30 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
 @app.get("/produtores/", tags=["Produtor"])
 def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Produtor)).all()
+
+@app.put("/produtores/{produtor_id}", tags=["Produtor"])
+def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    produtor = db.get(Produtor, produtor_id)
+    if not produtor:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(produtor, key) and key != "id":
+            setattr(produtor, key, value)
+            
+    db.add(produtor)
+    db.commit()
+    db.refresh(produtor)
+    return produtor
+
+@app.delete("/produtores/{produtor_id}", tags=["Produtor"])
+def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    produtor = db.get(Produtor, produtor_id)
+    if not produtor:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    db.delete(produtor)
+    db.commit()
+    return {"msg": "Produtor deletado com sucesso."}
 
 
 # ==========================================
@@ -135,6 +192,30 @@ def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session
     fazendas = db.exec(select(Fazenda).where(Fazenda.produtor_id == produtor_id)).all()
     return fazendas
 
+@app.put("/fazendas/{fazenda_id}", tags=["Fazenda"])
+def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    fazenda = db.get(Fazenda, fazenda_id)
+    if not fazenda:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(fazenda, key) and key != "id":
+            setattr(fazenda, key, value)
+            
+    db.add(fazenda)
+    db.commit()
+    db.refresh(fazenda)
+    return fazenda
+
+@app.delete("/fazendas/{fazenda_id}", tags=["Fazenda"])
+def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    fazenda = db.get(Fazenda, fazenda_id)
+    if not fazenda:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+    db.delete(fazenda)
+    db.commit()
+    return {"msg": "Fazenda deletada com sucesso."}
+
 
 # ==========================================
 # 🏢 D. EMPRESAS (Tradings)
@@ -149,6 +230,30 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
 @app.get("/empresas/", tags=["Empresa"])
 def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Empresa)).all()
+
+@app.put("/empresas/{empresa_id}", tags=["Empresa"])
+def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(empresa, key) and key != "id":
+            setattr(empresa, key, value)
+            
+    db.add(empresa)
+    db.commit()
+    db.refresh(empresa)
+    return empresa
+
+@app.delete("/empresas/{empresa_id}", tags=["Empresa"])
+def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    db.delete(empresa)
+    db.commit()
+    return {"msg": "Empresa deletada com sucesso."}
 
 
 # ==========================================
@@ -168,6 +273,34 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
 @app.get("/contratos/", tags=["Contrato"])
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Contrato)).all()
+
+@app.put("/contratos/{contrato_id}", tags=["Contrato"])
+def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    contrato = db.get(Contrato, contrato_id)
+    if not contrato:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(contrato, key) and key != "id" and key not in ["valor_total", "valor_comissao"]:
+            setattr(contrato, key, value)
+            
+    # Recalcula automaticamente a parte financeira após as alterações
+    contrato.valor_total = contrato.volume * contrato.preco_unitario
+    contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
+            
+    db.add(contrato)
+    db.commit()
+    db.refresh(contrato)
+    return contrato
+
+@app.delete("/contratos/{contrato_id}", tags=["Contrato"])
+def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    contrato = db.get(Contrato, contrato_id)
+    if not contrato:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+    db.delete(contrato)
+    db.commit()
+    return {"msg": "Contrato deletado com sucesso."}
 
 
 @app.get("/exportar-excel/")
@@ -295,6 +428,30 @@ def listar_ofertas(session: Session = Depends(get_session)):
     ofertas = session.exec(select(Oferta)).all()
     return ofertas
 
+@app.put("/ofertas/{oferta_id}", tags=["Oferta"])
+def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    oferta = db.get(Oferta, oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(oferta, key) and key != "id":
+            setattr(oferta, key, value)
+            
+    db.add(oferta)
+    db.commit()
+    db.refresh(oferta)
+    return oferta
+
+@app.delete("/ofertas/{oferta_id}", tags=["Oferta"])
+def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    oferta = db.get(Oferta, oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
+    db.delete(oferta)
+    db.commit()
+    return {"msg": "Oferta deletada com sucesso."}
+
 @app.post("/compradores/", response_model=Comprador, tags=["Comprador"])
 def criar_comprador(comprador: Comprador, session: Session = Depends(get_session)):
     """
@@ -317,6 +474,30 @@ def listar_compradores(session: Session = Depends(get_session)):
     """
     compradores = session.exec(select(Comprador)).all()
     return compradores
+
+@app.put("/compradores/{comprador_id}", tags=["Comprador"])
+def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    comprador = db.get(Comprador, comprador_id)
+    if not comprador:
+        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(comprador, key) and key != "id":
+            setattr(comprador, key, value)
+            
+    db.add(comprador)
+    db.commit()
+    db.refresh(comprador)
+    return comprador
+
+@app.delete("/compradores/{comprador_id}", tags=["Comprador"])
+def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    comprador = db.get(Comprador, comprador_id)
+    if not comprador:
+        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
+    db.delete(comprador)
+    db.commit()
+    return {"msg": "Comprador deletado com sucesso."}
 
 @app.post("/esqueci-senha", tags=["Senha"])
 def esqueci_senha(email: str, db: Session = Depends(get_session)):
