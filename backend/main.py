@@ -77,7 +77,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # ==========================================
 # 👤 A. USUÁRIOS (Corretores)
 # ==========================================
-@app.post("/usuarios/")
+@app.post("/usuarios/", tags=["Usuarios"])
 def criar_usuario(
     usuario: Usuario, 
     db: Session = Depends(get_session), 
@@ -98,7 +98,7 @@ def criar_usuario(
     db.refresh(usuario)
     return {"msg": "Usuário criado com sucesso!", "dados": usuario}
 
-@app.get("/usuarios/")
+@app.get("/usuarios/", tags=["Usuario"])
 def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuarios = db.exec(select(Usuario)).all()
     return usuarios
@@ -107,14 +107,14 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
 # ==========================================
 # 🌾 B. PRODUTORES
 # ==========================================
-@app.post("/produtores/")
+@app.post("/produtores/", tags=["Produtor"])
 def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     db.add(produtor)
     db.commit()
     db.refresh(produtor)
     return {"msg": "Produtor criado com sucesso!", "dados": produtor}
 
-@app.get("/produtores/")
+@app.get("/produtores/", tags=["Produtor"])
 def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Produtor)).all()
 
@@ -122,7 +122,7 @@ def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(us
 # ==========================================
 # 🚜 C. FAZENDAS
 # ==========================================
-@app.post("/fazendas/")
+@app.post("/fazendas/", tags=["Fazenda"])
 def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     db.add(fazenda)
     db.commit()
@@ -130,7 +130,7 @@ def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_
     return {"msg": "Fazenda criada com sucesso!", "dados": fazenda}
 
 # A ROTA MÁGICA PRO SELECT DO SEU PAI: Traz as fazendas de 1 produtor específico
-@app.get("/produtores/{produtor_id}/fazendas")
+@app.get("/produtores/{produtor_id}/fazendas", tags=["Fazenda"])
 def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     fazendas = db.exec(select(Fazenda).where(Fazenda.produtor_id == produtor_id)).all()
     return fazendas
@@ -139,14 +139,14 @@ def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session
 # ==========================================
 # 🏢 D. EMPRESAS (Tradings)
 # ==========================================
-@app.post("/empresas/")
+@app.post("/empresas/", tags=["Empresa"])
 def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
     return {"msg": "Empresa criada com sucesso!", "dados": empresa}
 
-@app.get("/empresas/")
+@app.get("/empresas/", tags=["Empresa"])
 def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Empresa)).all()
 
@@ -154,7 +154,7 @@ def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usua
 # ==========================================
 # 📄 E. CONTRATOS (O Coração do Sistema)
 # ==========================================
-@app.post("/contratos/")
+@app.post("/contratos/", tags=["Contrato"])
 def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     # Cálculo de segurança: O Backend calcula sozinho pra evitar fraudes ou erros no React
     contrato.valor_total = contrato.volume * contrato.preco_unitario
@@ -165,7 +165,7 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
     db.refresh(contrato)
     return {"msg": "Contrato emitido com sucesso!", "dados": contrato}
 
-@app.get("/contratos/")
+@app.get("/contratos/", tags=["Contrato"])
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     return db.exec(select(Contrato)).all()
 
@@ -217,7 +217,7 @@ class OfertaCreate(BaseModel):
     data_entrega_embarque: date # ou date
     compradores_ids: List[int] = [] # <--- Aqui você seleciona quais IDs de compradores vão receber
 
-@app.post("/ofertas/", response_model=Oferta)
+@app.post("/ofertas/", response_model=Oferta, tags=["Oferta"])
 def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     """
     Cria uma nova oferta, valida a fazenda e envia o WhatsApp automaticamente 
@@ -287,7 +287,7 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
 
     return nova_oferta
 
-@app.get("/ofertas/", response_model=list[Oferta])
+@app.get("/ofertas/", response_model=list[Oferta], tags=["Oferta"])
 def listar_ofertas(session: Session = Depends(get_session)):
     """
     Lista todas as ofertas ativas no sistema.
@@ -295,7 +295,7 @@ def listar_ofertas(session: Session = Depends(get_session)):
     ofertas = session.exec(select(Oferta)).all()
     return ofertas
 
-@app.post("/compradores/", response_model=Comprador)
+@app.post("/compradores/", response_model=Comprador, tags=["Comprador"])
 def criar_comprador(comprador: Comprador, session: Session = Depends(get_session)):
     """
     Cadastra um novo comprador vinculado a uma empresa (Trading).
@@ -310,7 +310,7 @@ def criar_comprador(comprador: Comprador, session: Session = Depends(get_session
     session.refresh(comprador)
     return comprador
 
-@app.get("/compradores/", response_model=list[Comprador])
+@app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
 def listar_compradores(session: Session = Depends(get_session)):
     """
     Lista todos os compradores cadastrados.
@@ -318,7 +318,7 @@ def listar_compradores(session: Session = Depends(get_session)):
     compradores = session.exec(select(Comprador)).all()
     return compradores
 
-@app.post("/esqueci-senha")
+@app.post("/esqueci-senha", tags=["Senha"])
 def esqueci_senha(email: str, db: Session = Depends(get_session)):
     # 1. Busca o usuário pelo e-mail
     usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
@@ -355,7 +355,7 @@ class RedefinirSenhaRequest(BaseModel):
     token: str
     nova_senha: str
 
-@app.post("/redefinir-senha")
+@app.post("/redefinir-senha", tags=["Senha"])
 def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_session)):
     # 1. Busca o usuário que possui esse token
     usuario = db.exec(select(Usuario).where(Usuario.reset_token == dados.token)).first()
