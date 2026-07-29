@@ -24,7 +24,7 @@ load_dotenv()
 
 EVOLUTION_URL = "https://evolution-api-production-aeca.up.railway.app"
 EVOLUTION_API_KEY = os.getenv('EVOLUTION_API_KEY')
-INSTANCIA = "teste"
+INSTANCIA = "corretora"
 
 
 def disparar_whatsapp_comprador(telefone: str, mensagem: str):
@@ -368,27 +368,42 @@ def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_sess
 
 @app.get("/conectar-whatsapp", response_class=HTMLResponse)
 def conectar_whatsapp():
-    """Rota para gerar e exibir o QR Code do WhatsApp na tela"""
-    url = f"{EVOLUTION_URL}/instance/connect/{INSTANCIA}"
+    """Rota inteligente: Cria a instância nova ou conecta se já existir"""
     headers = {
-        "apikey": EVOLUTION_API_KEY
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json"
     }
     
     try:
-        resposta = requests.get(url, headers=headers)
+        # 1. Tenta CRIAR a nova instância
+        url_create = f"{EVOLUTION_URL}/instance/create"
+        payload = {"instanceName": INSTANCIA, "qrcode": True}
+        resposta = requests.post(url_create, headers=headers, json=payload)
         dados = resposta.json()
         
-        # Se a Evolution devolver o base64, criamos uma telinha HTML com a imagem!
-        if "base64" in dados:
-            imagem_base64 = dados["base64"]
+        # 2. Se a instância já existir, a Evolution devolve erro 403. Aí tentamos o CONNECT.
+        if resposta.status_code == 403 or (isinstance(dados, dict) and dados.get("error") == "Instance already exists"):
+            url_connect = f"{EVOLUTION_URL}/instance/connect/{INSTANCIA}"
+            resposta = requests.get(url_connect, headers=headers)
+            dados = resposta.json()
+
+        # 3. Procura a imagem do QR Code na resposta
+        imagem_base64 = None
+        if isinstance(dados, dict):
+            if "base64" in dados:
+                imagem_base64 = dados["base64"]
+            elif "qrcode" in dados and "base64" in dados["qrcode"]:
+                imagem_base64 = dados["qrcode"]["base64"]
+        
+        if imagem_base64:
             html = f"""
             <html>
                 <body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; height: 100vh; background-color: #f0f2f5;">
-                    <h2>Conectar WhatsApp</h2>
-                    <p>Pegue seu celular e escaneie o código abaixo <b>rapidamente</b> (Expira em 15s):</p>
+                    <h2>Conectar WhatsApp (Instância: {INSTANCIA})</h2>
+                    <p>Aponte o celular e escaneie o código abaixo:</p>
                     <img src="{imagem_base64}" style="width: 300px; height: 300px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
                     <br>
-                    <button onclick="window.location.reload();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #25D366; color: white; border: none; border-radius: 5px;">🔄 Gerar Novo Código</button>
+                    <button onclick="window.location.reload();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #25D366; color: white; border: none; border-radius: 5px;">🔄 Atualizar Código</button>
                 </body>
             </html>
             """
