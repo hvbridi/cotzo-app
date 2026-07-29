@@ -235,8 +235,14 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
             detail="Operação bloqueada: Esta fazenda não pertence ao produtor informado."
         )
         
-    # 3. Busca os dados completos do corretor logado no banco de dados usando o token
-    corretor = session.exec(select(Usuario).where(Usuario.email == usuario_logado["sub"])).first()
+    # 3. Busca os dados completos do corretor logado no banco de dados
+    # Descobre o e-mail dependendo de como o seu auth.py foi programado
+    if isinstance(usuario_logado, dict):
+        email_logado = usuario_logado.get("email") or usuario_logado.get("sub")
+    else:
+        email_logado = usuario_logado.email
+        
+    corretor = session.exec(select(Usuario).where(Usuario.email == email_logado)).first()
     
     if not corretor or not corretor.telefone:
          raise HTTPException(status_code=400, detail="Seu usuário precisa ter um telefone cadastrado para enviar ofertas.")
