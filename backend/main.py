@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import List
 from datetime import date, datetime, timedelta
 import secrets
-
+from fastapi.responses import HTMLResponse
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
 # Nossas funções de segurança
@@ -366,9 +366,9 @@ def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_sess
     
     return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}
 
-@app.get("/conectar-whatsapp")
+@app.get("/conectar-whatsapp", response_class=HTMLResponse)
 def conectar_whatsapp():
-    """Rota temporária para gerar o QR Code do WhatsApp"""
+    """Rota para gerar e exibir o QR Code do WhatsApp na tela"""
     url = f"{EVOLUTION_URL}/instance/connect/{INSTANCIA}"
     headers = {
         "apikey": EVOLUTION_API_KEY
@@ -376,6 +376,25 @@ def conectar_whatsapp():
     
     try:
         resposta = requests.get(url, headers=headers)
-        return resposta.json()
+        dados = resposta.json()
+        
+        # Se a Evolution devolver o base64, criamos uma telinha HTML com a imagem!
+        if "base64" in dados:
+            imagem_base64 = dados["base64"]
+            html = f"""
+            <html>
+                <body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; height: 100vh; background-color: #f0f2f5;">
+                    <h2>Conectar WhatsApp</h2>
+                    <p>Pegue seu celular e escaneie o código abaixo <b>rapidamente</b> (Expira em 15s):</p>
+                    <img src="{imagem_base64}" style="width: 300px; height: 300px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+                    <br>
+                    <button onclick="window.location.reload();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #25D366; color: white; border: none; border-radius: 5px;">🔄 Gerar Novo Código</button>
+                </body>
+            </html>
+            """
+            return HTMLResponse(content=html)
+        else:
+            return HTMLResponse(content=f"<h3>O WhatsApp já está conectado ou houve um erro:</h3> <p>{dados}</p>")
+            
     except Exception as e:
-        return {"erro": str(e)}
+        return HTMLResponse(content=f"<h3>Erro ao conectar com a Evolution API:</h3> <p>{str(e)}</p>")
