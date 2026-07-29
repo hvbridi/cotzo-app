@@ -19,6 +19,7 @@ from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta,
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
 from database import criar_tabelas, get_session
+import string
 
 load_dotenv()
 
@@ -217,10 +218,10 @@ class OfertaCreate(BaseModel):
     compradores_ids: List[int] = [] # <--- Aqui você seleciona quais IDs de compradores vão receber
 
 @app.post("/ofertas/", response_model=Oferta)
-def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),usuario_logado=Depends(usuario_atual)):
+def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     """
     Cria uma nova oferta, valida a fazenda e envia o WhatsApp automaticamente 
-    para os compradores selecionados na lista 'compradores_ids'.
+    para os compradores selecionados, incluindo o contato do corretor logado.
     """
     # 1. Valida se a fazenda existe
     fazenda_db = session.get(Fazenda, dados.fazenda_id)
@@ -234,7 +235,13 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),us
             detail="Operação bloqueada: Esta fazenda não pertence ao produtor informado."
         )
         
-    # 3. Cria o objeto Oferta para salvar no banco
+    # 3. Busca os dados completos do corretor logado no banco de dados usando o token
+    corretor = session.exec(select(Usuario).where(Usuario.email == usuario_logado["sub"])).first()
+    
+    if not corretor or not corretor.telefone:
+         raise HTTPException(status_code=400, detail="Seu usuário precisa ter um telefone cadastrado para enviar ofertas.")
+        
+    # 4. Cria o objeto Oferta para salvar no banco
     nova_oferta = Oferta(
         produtor_id=dados.produtor_id,
         fazenda_id=dados.fazenda_id,
@@ -248,13 +255,12 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),us
     session.commit()
     session.refresh(nova_oferta)
     
-    # 4. DISPARO AUTOMÁTICO PARA OS COMPRADORES SELECIONADOS
+    # 5. DISPARO AUTOMÁTICO PARA OS COMPRADORES SELECIONADOS
     if dados.compradores_ids:
-        # Pega o nome do produtor e da fazenda para deixar a mensagem bonita
         produtor_nome = fazenda_db.produtor.nome
         fazenda_nome = fazenda_db.nome
         
-        # Monta o texto do WhatsApp
+        # Monta o texto do WhatsApp incluindo os dados do corretor
         texto_mensagem = (
             f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
             f"👤 *Produtor:* {produtor_nome}\n"
@@ -262,14 +268,15 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session),us
             f"📦 *Volume:* {dados.volume:,} sacas\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
             f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
-            f"Responda esta mensagem para negociar!"
+            f"👨‍💼 *Corretor:* {corretor.nome}\n"
+            f"📞 *WhatsApp:* {corretor.telefone}\n\n"
+            f"Responda esta mensagem ou clique no número acima para negociar!"
         )
         
         # Busca cada comprador no banco pelo ID enviado na lista
         for comprador_id in dados.compradores_ids:
             comprador = session.get(Comprador, comprador_id)
             if comprador and comprador.telefone:
-                # Dispara o WhatsApp para o telefone do comprador
                 disparar_whatsapp_comprador(comprador.telefone, texto_mensagem)
 
     return nova_oferta
@@ -318,7 +325,7 @@ def esqueci_senha(email: str, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail="Este usuário não possui um telefone cadastrado para receber o token. Contate o administrador.")
     
     # 3. Gera um token seguro e único e define a validade (15 minutos)
-    token_recuperacao = secrets.token_urlsafe(32)
+    token_recuperacao = "".join(secrets.choice(string.digits) for _ in range(6))
     usuario.reset_token = token_recuperacao
     usuario.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
     
