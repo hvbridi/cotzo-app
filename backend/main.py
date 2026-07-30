@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 from contextlib import asynccontextmanager
@@ -20,6 +20,10 @@ from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_sen
 # Nossa conexão com o banco
 from database import criar_tabelas, get_session
 import string
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
@@ -56,11 +60,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Libera o acesso para o frontend conversar com a API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Em produção, você pode trocar "*" pelo link exato do seu site frontend
+    allow_credentials=True,
+    allow_methods=["*"], # Permite GET, POST, PUT, DELETE...
+    allow_headers=["*"],
+)
+
 # ==========================================
 # 🔐 ROTA DE LOGIN (Adaptada para o Swagger)
 # ==========================================
 @app.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
     # 1. O Swagger manda os dados num pacote chamado "form_data". 
     # O email vem escondido dentro de "form_data.username" e a senha em "form_data.password"
     usuario = db.exec(select(Usuario).where(Usuario.email == form_data.username)).first()
@@ -500,7 +518,8 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
     return {"msg": "Comprador deletado com sucesso."}
 
 @app.post("/esqueci-senha", tags=["Senha"])
-def esqueci_senha(email: str, db: Session = Depends(get_session)):
+@limiter.limit("3/minute")
+def esqueci_senha(request: Request, email: str, db: Session = Depends(get_session)):
     # 1. Busca o usuário pelo e-mail
     usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
     
