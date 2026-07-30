@@ -9,7 +9,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from datetime import date, datetime, timedelta
 import secrets
 from fastapi.responses import HTMLResponse
@@ -95,6 +95,15 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 # ==========================================
 # 👤 A. USUÁRIOS (Corretores)
 # ==========================================
+
+class UsuarioUpdate(BaseModel):
+    nome: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    senha_hash: Optional[str] = None
+    cargo: Optional[str] = None
+    comissao_padrao: Optional[float] = None
+
 @app.post("/usuarios/", tags=["Usuario"])
 def criar_usuario(
     usuario: Usuario, 
@@ -114,23 +123,28 @@ def criar_usuario(
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
-    return {"msg": "Usuário criado com sucesso!", "dados": usuario}
+    return {
+        "msg": "Usuário criado com sucesso!", 
+        "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})
+    }
 
 @app.get("/usuarios/", tags=["Usuario"])
 def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuarios = db.exec(select(Usuario)).all()
-    return usuarios
+    return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
 @app.put("/usuarios/{usuario_id}", tags=["Usuario"])
-def atualizar_usuario(usuario_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado['cargo'] != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem editar usuários.")
         
     usuario = db.get(Usuario, usuario_id)
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    dados_filtrados = dados_atualizados.model_dump(exclude_unset=True)
         
-    for key, value in dados_atualizados.items():
+    for key, value in dados_filtrados.items():
         if hasattr(usuario, key) and key != "id":
             if key == "senha_hash": # Se estiver mudando a senha, criptografa de novo
                 value = obter_hash_senha(value)
@@ -139,7 +153,10 @@ def atualizar_usuario(usuario_id: int, dados_atualizados: dict, db: Session = De
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
-    return {"msg": "Usuário atualizado!", "dados": usuario}
+    return {
+        "msg": "Usuário atualizado!", 
+        "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})
+    }
 
 @app.delete("/usuarios/{usuario_id}", tags=["Usuario"])
 def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
