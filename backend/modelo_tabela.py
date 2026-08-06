@@ -37,7 +37,8 @@ class Fazenda(SQLModel, table=True):
     # Dependência de criação (A fazenda não existe sem um produtor)
     produtor_id: int = Field(foreign_key="produtor.id")
     produtor: Optional[Produtor] = Relationship(back_populates="fazendas")
-    
+    capacidade_carregamento: Optional[int] = None # Ex: 50 (toneladas)
+    comprimento_balanca: Optional[float] = None
     # Vínculos
     ofertas: List["Oferta"] = Relationship(back_populates="fazenda")
     contratos: List["Contrato"] = Relationship(back_populates="fazenda_origem") # <- CORREÇÃO AQUI
