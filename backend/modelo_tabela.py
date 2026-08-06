@@ -22,7 +22,9 @@ class Produtor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nome: str
     whatsapp: str
-    
+    cpf_cnpj: Optional[str] = None 
+    cidade: Optional[str] = None
+    uf: Optional[str] = None
     # Vínculos
     fazendas: List["Fazenda"] = Relationship(back_populates="produtor")
     ofertas: List["Oferta"] = Relationship(back_populates="produtor")
