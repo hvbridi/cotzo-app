@@ -1,9 +1,38 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../services/api'
 
 export default function Empresas() {
   const navigate = useNavigate()
   const [busca, setBusca] = useState('')
+  const [empresas, setEmpresas] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    async function carregarEmpresas() {
+      try {
+        const resposta = await apiFetch('/empresas/')
+        if (!resposta.ok) {
+          throw new Error('Falha ao carregar empresas do servidor.')
+        }
+        const dados = await resposta.json()
+        setEmpresas(dados)
+      } catch (err) {
+        setErro(err.message)
+      } finally {
+        setCarregando(false)
+      }
+    }
+    carregarEmpresas()
+  }, [])
+
+  const empresasFiltradas = empresas.filter((emp) => {
+    const termo = busca.toLowerCase()
+    const nome = (emp.razao_social || emp.nome || '').toLowerCase()
+    const doc = (emp.cnpj || '').toLowerCase()
+    return nome.includes(termo) || doc.includes(termo)
+  })
 
   return (
     <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
@@ -77,7 +106,10 @@ export default function Empresas() {
             Suporte
           </a>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              localStorage.removeItem('token')
+              navigate('/')
+            }}
             className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
@@ -152,7 +184,7 @@ export default function Empresas() {
 
             {/* Container da Tabela e Buscas */}
             <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
-              {/* Search & Filter Bar */}
+              {/* Search Bar */}
               <div className="p-6 border-b border-outline-variant/20">
                 <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                   <div className="relative w-full sm:max-w-md">
@@ -167,164 +199,75 @@ export default function Empresas() {
                       onChange={(e) => setBusca(e.target.value)}
                     />
                   </div>
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-outline-variant/40 text-secondary hover:bg-surface-container-low transition-colors w-full sm:w-auto justify-center text-sm font-medium cursor-pointer">
-                      <span className="material-symbols-outlined text-sm">
-                        filter_list
-                      </span>
-                      Filtros
-                    </button>
-                    <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-outline-variant/40 text-secondary hover:bg-surface-container-low transition-colors w-full sm:w-auto justify-center text-sm font-medium cursor-pointer">
-                      <span className="material-symbols-outlined text-sm">
-                        download
-                      </span>
-                      Exportar
-                    </button>
-                  </div>
                 </div>
               </div>
 
               {/* Data Table */}
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low text-secondary text-sm">
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        ID
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                        Razão Social
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        CNPJ
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        Mesa de Operações
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        Telefone
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm">
-                    {/* Row 1 - CARGILL (REDIRECIONA PARA VER DETALHES) */}
-                    <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#001</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        Cargill Agrícola S.A.
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        01.234.567/0001-89
-                      </td>
-                      <td className="py-4 px-6 text-on-surface">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-tertiary-container/30 flex items-center justify-center text-xs font-bold text-tertiary">
-                            RO
-                          </div>
-                          Ricardo Oliveira
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">(66) 99999-0001</td>
-                      <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => navigate('/detalhes-empresa')}
-                          className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer"
+                {carregando ? (
+                  <div className="p-12 text-center text-secondary font-body">
+                    Carregando empresas do banco de dados...
+                  </div>
+                ) : erro ? (
+                  <div className="p-12 text-center text-error font-body">
+                    {erro}
+                  </div>
+                ) : empresasFiltradas.length === 0 ? (
+                  <div className="p-12 text-center text-secondary font-body">
+                    Nenhuma empresa encontrada no banco de dados.
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low text-secondary text-sm">
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
+                          ID
+                        </th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
+                          Razão Social / Nome
+                        </th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
+                          CNPJ
+                        </th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
+                          Cidade / UF
+                        </th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
+                          Ações
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {empresasFiltradas.map((emp) => (
+                        <tr
+                          key={emp.id}
+                          className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors"
                         >
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-
-                    {/* Row 2 */}
-                    <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#002</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        Bunge Alimentos
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        02.345.678/0001-90
-                      </td>
-                      <td className="py-4 px-6 text-on-surface">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                            AS
-                          </div>
-                          Ana Paula Santos
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">(66) 99999-0002</td>
-                      <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => navigate('/detalhes-empresa')}
-                          className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer"
-                        >
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-
-                    {/* Row 3 */}
-                    <tr className="hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#003</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        Louis Dreyfus Company
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        03.456.789/0001-01
-                      </td>
-                      <td className="py-4 px-6 text-on-surface">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-xs font-bold text-on-secondary-container">
-                            CM
-                          </div>
-                          Carlos Mendes
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">(66) 99999-0003</td>
-                      <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => navigate('/detalhes-empresa')}
-                          className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer"
-                        >
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between p-6 border-t border-outline-variant/20 text-sm text-secondary bg-surface-container-lowest">
-                <span>Mostrando 1 a 3 de 15 resultados</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="p-2 rounded-lg hover:bg-surface-container-low transition-colors opacity-50 cursor-not-allowed"
-                    disabled
-                  >
-                    <span className="material-symbols-outlined text-sm">
-                      chevron_left
-                    </span>
-                  </button>
-                  <button className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold">
-                    1
-                  </button>
-                  <button className="w-8 h-8 rounded-lg hover:bg-surface-container-low transition-colors flex items-center justify-center text-on-surface cursor-pointer">
-                    2
-                  </button>
-                  <button className="w-8 h-8 rounded-lg hover:bg-surface-container-low transition-colors flex items-center justify-center text-on-surface cursor-pointer">
-                    3
-                  </button>
-                  <span className="px-1 text-on-surface">...</span>
-                  <button className="p-2 rounded-lg hover:bg-surface-container-low transition-colors text-on-surface cursor-pointer">
-                    <span className="material-symbols-outlined text-sm">
-                      chevron_right
-                    </span>
-                  </button>
-                </div>
+                          <td className="py-4 px-6 font-mono text-secondary">
+                            #{emp.id}
+                          </td>
+                          <td className="py-4 px-6 font-medium text-on-surface">
+                            {emp.razao_social || emp.nome}
+                          </td>
+                          <td className="py-4 px-6 text-secondary">
+                            {emp.cnpj || 'Não informado'}
+                          </td>
+                          <td className="py-4 px-6 text-on-surface">
+                            {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'N/A'}
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <button
+                              onClick={() => navigate('/detalhes-empresa')}
+                              className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer"
+                            >
+                              Ver Detalhes
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>

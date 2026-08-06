@@ -1,9 +1,86 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../services/api'
 
 export default function Produtores() {
   const navigate = useNavigate()
   const [busca, setBusca] = useState('')
+  const [produtores, setProdutores] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+
+  // Estados do Modal de Novo Produtor
+  const [modalAberto, setModalAberto] = useState(false)
+  const [nome, setNome] = useState('')
+  const [cpfCnpj, setCpfCnpj] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [cidade, setCidade] = useState('')
+  const [estado, setEstado] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  // Carregar produtores do backend
+  const carregarProdutores = async () => {
+    setCarregando(true)
+    try {
+      const resposta = await apiFetch('/produtores/')
+      if (!resposta.ok) {
+        throw new Error('Falha ao buscar produtores no servidor.')
+      }
+      const dados = await resposta.json()
+      setProdutores(dados)
+    } catch (err) {
+      setErro(err.message)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  useEffect(() => {
+    carregarProdutores()
+  }, [])
+
+  // Cadastrar novo produtor
+  const handleCadastrarProdutor = async (e) => {
+    e.preventDefault()
+    setSalvando(true)
+
+    try {
+      const resposta = await apiFetch('/produtores/', {
+        method: 'POST',
+        body: JSON.stringify({
+          nome,
+          cpf_cnpj: cpfCnpj,
+          telefone,
+          cidade,
+          estado
+        })
+      })
+
+      if (!resposta.ok) {
+        throw new Error('Erro ao salvar produtor no banco de dados.')
+      }
+
+      alert('Produtor cadastrado com sucesso!')
+      setModalAberto(false)
+      setNome('')
+      setCpfCnpj('')
+      setTelefone('')
+      setCidade('')
+      setEstado('')
+      carregarProdutores() // Recarrega a lista atualizada
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const produtoresFiltrados = produtores.filter((p) => {
+    const termo = busca.toLowerCase()
+    const nomeProd = (p.nome || '').toLowerCase()
+    const doc = (p.cpf_cnpj || p.cpf || p.cnpj || '').toLowerCase()
+    return nomeProd.includes(termo) || doc.includes(termo)
+  })
 
   return (
     <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
@@ -77,7 +154,10 @@ export default function Produtores() {
             Suporte
           </a>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              localStorage.removeItem('token')
+              navigate('/')
+            }}
             className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
@@ -89,7 +169,7 @@ export default function Produtores() {
       {/* Main Wrapper */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-72">
         {/* TopAppBar */}
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
+        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
               <div className="relative w-64">
@@ -121,10 +201,10 @@ export default function Produtores() {
           </div>
         </header>
 
-        {/* Main Content Area */}
+        {/* Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto space-y-8">
-            {/* Breadcrumb & Header */}
+            {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
               <div>
                 <div className="flex items-center gap-2 text-sm font-label text-on-surface-variant mb-2">
@@ -135,192 +215,180 @@ export default function Produtores() {
                   <span className="text-primary font-medium">Produtores</span>
                 </div>
                 <h2 className="font-headline text-3xl font-semibold text-on-background mb-1">
-                  Produtores
+                  Produtores Rurais
                 </h2>
                 <p className="text-secondary text-lg">
-                  Gerencie os produtores cadastrados no sistema.
+                  Gerencie os produtores rurais parceiros e suas propriedades.
                 </p>
               </div>
-              <button
-                onClick={() => alert('Modal para cadastrar Novo Produtor!')}
-                className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-2 transform active:scale-95 cursor-pointer self-start md:self-auto"
-              >
-                <span className="material-symbols-outlined">add</span>
-                Novo Produtor
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setModalAberto(true)}
+                  className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined">person_add</span>
+                  Novo Produtor
+                </button>
+                <Link
+                  to="/cadastrar-fazenda"
+                  className="bg-secondary-container text-on-secondary-container px-6 py-3 rounded-xl font-bold hover:bg-surface-container-highest transition-colors shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined">landscape</span>
+                  Nova Fazenda
+                </Link>
+              </div>
             </div>
 
-            {/* Container da Tabela e Buscas */}
+            {/* Container da Tabela */}
             <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
-              {/* Search & Filter Bar */}
               <div className="p-6 border-b border-outline-variant/20">
-                <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                  <div className="relative w-full sm:max-w-md">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary text-sm">
-                      search
-                    </span>
-                    <input
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface-container-low focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm text-on-surface placeholder:text-secondary transition-all"
-                      placeholder="Buscar por nome ou CPF..."
-                      type="text"
-                      value={busca}
-                      onChange={(e) => setBusca(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-outline-variant/40 text-secondary hover:bg-surface-container-low transition-colors w-full sm:w-auto justify-center text-sm font-medium cursor-pointer">
-                      <span className="material-symbols-outlined text-sm">
-                        filter_list
-                      </span>
-                      Filtros
-                    </button>
-                    <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-outline-variant/40 text-secondary hover:bg-surface-container-low transition-colors w-full sm:w-auto justify-center text-sm font-medium cursor-pointer">
-                      <span className="material-symbols-outlined text-sm">
-                        download
-                      </span>
-                      Exportar
-                    </button>
-                  </div>
+                <div className="relative w-full sm:max-w-md">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary text-sm">
+                    search
+                  </span>
+                  <input
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface-container-low focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm text-on-surface placeholder:text-secondary transition-all"
+                    placeholder="Buscar por nome ou CPF/CNPJ..."
+                    type="text"
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                  />
                 </div>
               </div>
 
-              {/* Data Table */}
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low text-secondary text-sm">
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        ID
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                        Nome / Razão Social
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 whitespace-nowrap">
-                        CNPJ/CPF
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-center whitespace-nowrap">
-                        Fazendas Vinculadas
-                      </th>
-                      <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm">
-                    {/* Row 1 */}
-                    <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#001</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-xs">
-                            AS
-                          </div>
-                          Agropecuária Santa Maria
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        12.345.678/0001-90
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        <span className="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant px-2.5 py-0.5 rounded-full text-xs font-medium">
-                          03
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <button className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer">
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-
-                    {/* Row 2 */}
-                    <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#002</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-bold text-xs">
-                            JS
-                          </div>
-                          João da Silva
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        123.456.789-00
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        <span className="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant px-2.5 py-0.5 rounded-full text-xs font-medium">
-                          01
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <button className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer">
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-
-                    {/* Row 3 */}
-                    <tr className="hover:bg-surface-container-lowest/50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-secondary">#003</td>
-                      <td className="py-4 px-6 font-medium text-on-surface">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs">
-                            FB
-                          </div>
-                          Fazenda Boa Vista Ltda
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-secondary">
-                        98.765.432/0001-10
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        <span className="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant px-2.5 py-0.5 rounded-full text-xs font-medium">
-                          05
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <button className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer">
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between p-6 border-t border-outline-variant/20 text-sm text-secondary bg-surface-container-lowest">
-                <span>Mostrando 1 a 3 de 45 resultados</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="p-2 rounded-lg hover:bg-surface-container-low transition-colors opacity-50 cursor-not-allowed"
-                    disabled
-                  >
-                    <span className="material-symbols-outlined text-sm">
-                      chevron_left
-                    </span>
-                  </button>
-                  <button className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold">
-                    1
-                  </button>
-                  <button className="w-8 h-8 rounded-lg hover:bg-surface-container-low transition-colors flex items-center justify-center text-on-surface cursor-pointer">
-                    2
-                  </button>
-                  <button className="w-8 h-8 rounded-lg hover:bg-surface-container-low transition-colors flex items-center justify-center text-on-surface cursor-pointer">
-                    3
-                  </button>
-                  <span className="px-1 text-on-surface">...</span>
-                  <button className="p-2 rounded-lg hover:bg-surface-container-low transition-colors text-on-surface cursor-pointer">
-                    <span className="material-symbols-outlined text-sm">
-                      chevron_right
-                    </span>
-                  </button>
-                </div>
+                {carregando ? (
+                  <div className="p-12 text-center text-secondary font-body">
+                    Carregando produtores do banco de dados...
+                  </div>
+                ) : erro ? (
+                  <div className="p-12 text-center text-error font-body">
+                    {erro}
+                  </div>
+                ) : produtoresFiltrados.length === 0 ? (
+                  <div className="p-12 text-center text-secondary font-body">
+                    Nenhum produtor encontrado no banco de dados.
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low text-secondary text-sm">
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">ID</th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Nome do Produtor</th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">CPF / CNPJ</th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Telefone</th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Localização</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {produtoresFiltrados.map((p) => (
+                        <tr key={p.id} className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
+                          <td className="py-4 px-6 font-mono text-secondary">#{p.id}</td>
+                          <td className="py-4 px-6 font-medium text-on-surface">{p.nome}</td>
+                          <td className="py-4 px-6 text-secondary">{p.cpf_cnpj || p.cpf || 'Não informado'}</td>
+                          <td className="py-4 px-6 text-secondary">{p.telefone || 'Não informado'}</td>
+                          <td className="py-4 px-6 text-on-surface">{p.cidade ? `${p.cidade} - ${p.estado}` : 'N/A'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
         </main>
       </div>
+
+      {/* Modal de Novo Produtor */}
+      {modalAberto && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-lg w-full space-y-6 border border-outline-variant/30">
+            <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+              <h3 className="text-xl font-headline font-bold text-on-surface">Cadastrar Novo Produtor</h3>
+              <button onClick={() => setModalAberto(false)} className="text-secondary hover:text-on-surface">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCadastrarProdutor} className="space-y-4 font-body">
+              <div>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Ex: João da Silva"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">CPF / CNPJ</label>
+                  <input
+                    type="text"
+                    value={cpfCnpj}
+                    onChange={(e) => setCnpj(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">Telefone / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={telefone}
+                    onChange={(e) => setTelefone(e.target.value)}
+                    placeholder="(00) 00000-0000"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">Cidade</label>
+                  <input
+                    type="text"
+                    value={cidade}
+                    onChange={(e) => setCidade(e.target.value)}
+                    placeholder="Nome da Cidade"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">UF</label>
+                  <input
+                    type="text"
+                    value={estado}
+                    onChange={(e) => setEstado(e.target.value)}
+                    placeholder="UF"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none uppercase"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setModalAberto(false)}
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {salvando ? 'Salvando...' : 'Salvar Produtor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

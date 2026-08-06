@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../services/api'
 
 export default function CadastrarEmpresa() {
   const navigate = useNavigate()
@@ -10,21 +11,40 @@ export default function CadastrarEmpresa() {
   const [tipoEstabelecimento, setTipoEstabelecimento] = useState('matriz')
   const [cidade, setCidade] = useState('')
   const [estado, setEstado] = useState('')
+  const [carregando, setCarregando] = useState(false)
 
-  // Estados do Contato da Mesa de Operações
-  const [nomeComprador, setNomeComprador] = useState('')
-  const [telefone, setTelefone] = useState('')
-  const [emailContratos, setEmailContratos] = useState('')
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    alert('Empresa compradora cadastrada com sucesso!')
-    navigate('/empresas')
+    setCarregando(true)
+
+    try {
+      const resposta = await apiFetch('/empresas/', {
+        method: 'POST',
+        body: JSON.stringify({
+          razao_social: razaoSocial,
+          cnpj: cnpj,
+          tipo_estabelecimento: tipoEstabelecimento,
+          cidade: cidade,
+          estado: estado,
+        }),
+      })
+
+      if (!resposta.ok) {
+        throw new Error('Erro ao salvar empresa no banco de dados.')
+      }
+
+      alert('Empresa cadastrada com sucesso!')
+      navigate('/empresas')
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setCarregando(false)
+    }
   }
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in">
-      {/* SideNavBar Fixa na Altura da Tela */}
+      {/* SideNavBar Fixa */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -94,7 +114,10 @@ export default function CadastrarEmpresa() {
             Suporte
           </a>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              localStorage.removeItem('token')
+              navigate('/')
+            }}
             className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
@@ -103,10 +126,9 @@ export default function CadastrarEmpresa() {
         </div>
       </aside>
 
-      {/* Main Content Wrapper Isolado */}
+      {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        {/* TopAppBar */}
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
+        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
               <div className="relative w-64">
@@ -138,14 +160,13 @@ export default function CadastrarEmpresa() {
           </div>
         </header>
 
-        {/* Page Canvas com Scroll Independente */}
+        {/* Page Canvas */}
         <main className="flex-1 p-8 mt-16 bg-surface-container-lowest overflow-y-auto">
-          {/* Header & Breadcrumbs */}
           <div className="max-w-5xl mx-auto mb-8">
-            <nav className="flex text-sm text-on-surface-variant mb-3 font-body" aria-label="Breadcrumb">
+            <nav className="flex text-sm text-on-surface-variant mb-3 font-body">
               <ol className="inline-flex items-center space-x-1 md:space-x-3">
-                <li className="inline-flex items-center">
-                  <Link to="/cadastros" className="inline-flex items-center hover:text-primary transition-colors">
+                <li>
+                  <Link to="/cadastros" className="hover:text-primary transition-colors">
                     Central de Cadastros
                   </Link>
                 </li>
@@ -171,8 +192,8 @@ export default function CadastrarEmpresa() {
           </div>
 
           <form className="max-w-5xl mx-auto space-y-8" onSubmit={handleSubmit}>
-            {/* Card 1: Dados Corporativos */}
-            <div className="bg-surface-bright rounded-xl p-8 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
+            {/* Card: Dados Corporativos */}
+            <div className="bg-surface-bright rounded-xl p-8 shadow-sm border border-outline-variant/10">
               <div className="flex items-center gap-3 mb-6 pb-4 border-b border-surface-container-high">
                 <span className="material-symbols-outlined text-tertiary text-2xl">
                   domain
@@ -190,12 +211,12 @@ export default function CadastrarEmpresa() {
                   </label>
                   <input
                     type="text"
+                    required
                     id="razaoSocial"
-                    name="razaoSocial"
                     placeholder="Digite a razão social completa"
                     value={razaoSocial}
                     onChange={(e) => setRazaoSocial(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
 
@@ -206,46 +227,42 @@ export default function CadastrarEmpresa() {
                   </label>
                   <input
                     type="text"
+                    required
                     id="cnpj"
-                    name="cnpj"
                     placeholder="00.000.000/0000-00"
                     value={cnpj}
                     onChange={(e) => setCnpj(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
 
-                {/* Tipo de Estabelecimento (Radio) */}
+                {/* Tipo */}
                 <div className="col-span-1 md:col-span-2 flex flex-col gap-2">
                   <label className="text-sm font-medium text-on-surface-variant">
                     Tipo de Estabelecimento
                   </label>
-                  <div className="flex items-center h-[50px] gap-6 px-4 bg-surface-container-low rounded-lg border border-transparent">
-                    <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className="flex items-center h-[50px] gap-6 px-4 bg-surface-container-low rounded-lg">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="tipoEstabelecimento"
                         value="matriz"
                         checked={tipoEstabelecimento === 'matriz'}
                         onChange={() => setTipoEstabelecimento('matriz')}
-                        className="w-4 h-4 text-primary bg-surface-container-lowest border-outline-variant focus:ring-primary focus:ring-2"
+                        className="w-4 h-4 text-primary focus:ring-primary"
                       />
-                      <span className="text-on-surface group-hover:text-primary transition-colors">
-                        Matriz
-                      </span>
+                      <span className="text-on-surface">Matriz</span>
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer group">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="tipoEstabelecimento"
                         value="filial"
                         checked={tipoEstabelecimento === 'filial'}
                         onChange={() => setTipoEstabelecimento('filial')}
-                        className="w-4 h-4 text-primary bg-surface-container-lowest border-outline-variant focus:ring-primary focus:ring-2"
+                        className="w-4 h-4 text-primary focus:ring-primary"
                       />
-                      <span className="text-on-surface group-hover:text-primary transition-colors">
-                        Filial
-                      </span>
+                      <span className="text-on-surface">Filial</span>
                     </label>
                   </div>
                 </div>
@@ -258,11 +275,10 @@ export default function CadastrarEmpresa() {
                   <input
                     type="text"
                     id="cidade"
-                    name="cidade"
                     placeholder="Nome da cidade"
                     value={cidade}
                     onChange={(e) => setCidade(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
 
@@ -274,14 +290,11 @@ export default function CadastrarEmpresa() {
                   <div className="relative">
                     <select
                       id="estado"
-                      name="estado"
                       value={estado}
                       onChange={(e) => setEstado(e.target.value)}
-                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-4 pr-10 py-3 text-on-surface appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow cursor-pointer"
+                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-4 pr-10 py-3 text-on-surface appearance-none focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
                     >
-                      <option value="" disabled>
-                        UF
-                      </option>
+                      <option value="">UF</option>
                       <option value="SP">SP</option>
                       <option value="MT">MT</option>
                       <option value="GO">GO</option>
@@ -296,100 +309,21 @@ export default function CadastrarEmpresa() {
               </div>
             </div>
 
-            {/* Card 2: Contatos da Mesa de Operações */}
-            <div className="bg-surface-bright rounded-xl p-8 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-surface-container-high">
-                <span className="material-symbols-outlined text-tertiary text-2xl">
-                  support_agent
-                </span>
-                <h3 className="text-xl font-headline font-semibold text-on-surface">
-                  Contatos da Mesa de Operações
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => alert('Adicionar novo comprador')}
-                  className="ml-auto flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-lg font-semibold text-sm hover:bg-primary-container hover:text-on-primary-container transition-colors active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-lg">add</span>
-                  Adicionar Contato
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-body">
-                {/* Nome do Comprador */}
-                <div className="col-span-1 md:col-span-2 flex flex-col gap-2">
-                  <label htmlFor="nomeComprador" className="text-sm font-medium text-on-surface-variant">
-                    Nome do Comprador/Operador
-                  </label>
-                  <input
-                    type="text"
-                    id="nomeComprador"
-                    name="nomeComprador"
-                    placeholder="Nome completo do contato principal"
-                    value={nomeComprador}
-                    onChange={(e) => setNomeComprador(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
-                  />
-                </div>
-
-                {/* Telefone */}
-                <div className="col-span-1 flex flex-col gap-2">
-                  <label htmlFor="telefone" className="text-sm font-medium text-on-surface-variant">
-                    Telefone/WhatsApp Direto
-                  </label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
-                      call
-                    </span>
-                    <input
-                      type="tel"
-                      id="telefone"
-                      name="telefone"
-                      placeholder="(00) 00000-0000"
-                      value={telefone}
-                      onChange={(e) => setTelefone(e.target.value)}
-                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-10 pr-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
-                    />
-                  </div>
-                </div>
-
-                {/* Email */}
-                <div className="col-span-1 flex flex-col gap-2">
-                  <label htmlFor="emailContratos" className="text-sm font-medium text-on-surface-variant">
-                    E-mail para Envio de Contratos
-                  </label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
-                      mail
-                    </span>
-                    <input
-                      type="email"
-                      id="emailContratos"
-                      name="emailContratos"
-                      placeholder="contatos@empresa.com.br"
-                      value={emailContratos}
-                      onChange={(e) => setEmailContratos(e.target.value)}
-                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-10 pr-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-shadow"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Actions */}
+            {/* Actions */}
             <div className="flex items-center justify-end gap-4 pt-6 pb-12 font-body">
               <button
                 type="button"
                 onClick={() => navigate('/empresas')}
-                className="px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant bg-surface-bright hover:bg-surface-container-low font-semibold transition-colors focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                className="px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant bg-surface-bright hover:bg-surface-container-low font-semibold transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-8 py-3 bg-primary text-on-primary rounded-xl font-semibold shadow-sm hover:bg-primary-container hover:text-on-primary-container transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 cursor-pointer"
+                disabled={carregando}
+                className="px-8 py-3 bg-primary text-on-primary rounded-xl font-semibold shadow-sm hover:bg-primary-container hover:text-on-primary-container transition-all cursor-pointer disabled:opacity-50"
               >
-                Salvar Cadastro
+                {carregando ? 'Salvando...' : 'Salvar Cadastro'}
               </button>
             </div>
           </form>
