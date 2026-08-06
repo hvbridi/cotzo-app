@@ -1,21 +1,54 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { API_URL } from '../services/api'
 
 export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState('')
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
-    navigate('/dashboard')
+    setCarregando(true)
+    setErro('')
+
+    const formData = new URLSearchParams()
+    formData.append('username', email)
+    formData.append('password', senha)
+
+    try {
+      // Usa a URL base do servidor que está rodando na nuvem
+      const resposta = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData,
+      })
+
+      if (!resposta.ok) {
+        throw new Error('E-mail ou senha incorretos')
+      }
+
+      const dados = await resposta.json()
+      
+      // Salva o Token de Acesso no navegador
+      localStorage.setItem('token', dados.access_token)
+
+      navigate('/dashboard')
+    } catch (err) {
+      setErro('Erro ao conectar com o servidor. Verifique o link da API ou suas credenciais.')
+    } finally {
+      setCarregando(false)
+    }
   }
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-surface animate-fade-in">
-      {/* Background Image agrícola em alta definição com Overlay */}
       <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-500"
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: `url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1920&auto=format&fit=crop')`
         }}
@@ -23,10 +56,8 @@ export default function Login() {
         <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"></div>
       </div>
 
-      {/* Modal / Card de Login */}
-      <div className="relative z-10 w-full max-w-md p-8 bg-surface-bright/95 dark:bg-surface-dim/95 backdrop-blur-md rounded-2xl shadow-2xl border border-outline-variant/30 text-on-surface mx-4">
-        {/* Logo & Header */}
-        <div className="text-center mb-8">
+      <div className="relative z-10 w-full max-w-md p-8 bg-surface-bright/95 backdrop-blur-md rounded-2xl shadow-2xl border border-outline-variant/30 text-on-surface mx-4">
+        <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center gap-2 mb-2">
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-md">
               <span className="material-symbols-outlined text-on-primary text-2xl">
@@ -43,13 +74,15 @@ export default function Login() {
           <p className="text-xs font-semibold text-primary uppercase tracking-wider mt-1">
             Portal de Corretagem
           </p>
-          <p className="text-sm text-on-surface-variant mt-3 leading-relaxed">
-            Soluções financeiras e estratégicas para o agronegócio, conectando a terra ao capital com segurança e transparência.
-          </p>
         </div>
 
-        {/* Formulário */}
-        <form onSubmit={handleLogin} className="space-y-5 font-body">
+        {erro && (
+          <div className="mb-4 p-3 bg-error-container text-on-error-container text-sm rounded-xl text-center font-medium">
+            {erro}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="space-y-4 font-body">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1">
               E-mail corporativo
@@ -64,7 +97,7 @@ export default function Login() {
                 placeholder="seu.nome@terranova.com.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl py-3 pl-10 pr-4 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl py-3 pl-10 pr-4 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>
@@ -83,62 +116,19 @@ export default function Login() {
                 placeholder="••••••••"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl py-3 pl-10 pr-4 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl py-3 pl-10 pr-4 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
               />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">
-                  visibility
-                </span>
-              </button>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs font-body pt-1">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-on-surface-variant">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded text-primary accent-primary focus:ring-primary border-outline-variant"
-              />
-              Lembrar-me
-            </label>
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault()
-                alert('Solicitação de redefinição enviada ao suporte!')
-              }}
-              className="text-primary font-semibold hover:underline"
-            >
-              Esqueci minha senha
-            </a>
           </div>
 
           <button
             type="submit"
-            className="w-full bg-primary hover:bg-surface-tint text-on-primary font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all transform active:scale-[0.98] cursor-pointer mt-2"
+            disabled={carregando}
+            className="w-full bg-primary hover:bg-surface-tint text-on-primary font-bold py-3.5 px-4 rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50 mt-2"
           >
-            Entrar
+            {carregando ? 'Autenticando...' : 'Entrar'}
           </button>
         </form>
-
-        {/* Rodapé */}
-        <p className="text-center text-xs text-on-surface-variant mt-6">
-          Precisa de ajuda?{' '}
-          <a
-            href="#"
-            onClick={(e) => {
-              e.preventDefault()
-              alert('Entre em contato com o suporte: suporte@terranova.com.br')
-            }}
-            className="text-primary font-semibold hover:underline"
-          >
-            Contate o suporte interno
-          </a>
-          .
-        </p>
       </div>
     </div>
   )
