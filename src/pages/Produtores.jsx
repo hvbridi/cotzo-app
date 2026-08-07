@@ -12,10 +12,10 @@ export default function Produtores() {
   // Estados do Modal de Novo Produtor
   const [modalAberto, setModalAberto] = useState(false)
   const [nome, setNome] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
   const [cpfCnpj, setCpfCnpj] = useState('')
-  const [telefone, setTelefone] = useState('')
   const [cidade, setCidade] = useState('')
-  const [estado, setEstado] = useState('')
+  const [uf, setUf] = useState('')
   const [salvando, setSalvando] = useState(false)
 
   // Carregar produtores do backend
@@ -39,7 +39,7 @@ export default function Produtores() {
     carregarProdutores()
   }, [])
 
-  // Cadastrar novo produtor
+  // Cadastrar produtor com os campos exatos do novo modelo_tabela.py
   const handleCadastrarProdutor = async (e) => {
     e.preventDefault()
     setSalvando(true)
@@ -49,11 +49,11 @@ export default function Produtores() {
         method: 'POST',
         body: JSON.stringify({
           nome,
-          cpf_cnpj: cpfCnpj,
-          telefone,
-          cidade,
-          estado
-        })
+          whatsapp,
+          cpf_cnpj: cpfCnpj || null,
+          cidade: cidade || null,
+          uf: uf || null,
+        }),
       })
 
       if (!resposta.ok) {
@@ -63,11 +63,11 @@ export default function Produtores() {
       alert('Produtor cadastrado com sucesso!')
       setModalAberto(false)
       setNome('')
+      setWhatsapp('')
       setCpfCnpj('')
-      setTelefone('')
       setCidade('')
-      setEstado('')
-      carregarProdutores() // Recarrega a lista atualizada
+      setUf('')
+      carregarProdutores()
     } catch (err) {
       alert(err.message)
     } finally {
@@ -78,8 +78,9 @@ export default function Produtores() {
   const produtoresFiltrados = produtores.filter((p) => {
     const termo = busca.toLowerCase()
     const nomeProd = (p.nome || '').toLowerCase()
-    const doc = (p.cpf_cnpj || p.cpf || p.cnpj || '').toLowerCase()
-    return nomeProd.includes(termo) || doc.includes(termo)
+    const doc = (p.cpf_cnpj || '').toLowerCase()
+    const zap = (p.whatsapp || '').toLowerCase()
+    return nomeProd.includes(termo) || doc.includes(termo) || zap.includes(termo)
   })
 
   return (
@@ -218,7 +219,7 @@ export default function Produtores() {
                   Produtores Rurais
                 </h2>
                 <p className="text-secondary text-lg">
-                  Gerencie os produtores rurais parceiros e suas propriedades.
+                  Gerencie os produtores rurais parceiros do sistema.
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -248,7 +249,7 @@ export default function Produtores() {
                   </span>
                   <input
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface-container-low focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm text-on-surface placeholder:text-secondary transition-all"
-                    placeholder="Buscar por nome ou CPF/CNPJ..."
+                    placeholder="Buscar por nome, CPF/CNPJ ou WhatsApp..."
                     type="text"
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
@@ -276,7 +277,7 @@ export default function Produtores() {
                         <th className="py-3 px-6 font-medium border-b border-outline-variant/20">ID</th>
                         <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Nome do Produtor</th>
                         <th className="py-3 px-6 font-medium border-b border-outline-variant/20">CPF / CNPJ</th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Telefone</th>
+                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">WhatsApp</th>
                         <th className="py-3 px-6 font-medium border-b border-outline-variant/20">Localização</th>
                       </tr>
                     </thead>
@@ -285,9 +286,9 @@ export default function Produtores() {
                         <tr key={p.id} className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
                           <td className="py-4 px-6 font-mono text-secondary">#{p.id}</td>
                           <td className="py-4 px-6 font-medium text-on-surface">{p.nome}</td>
-                          <td className="py-4 px-6 text-secondary">{p.cpf_cnpj || p.cpf || 'Não informado'}</td>
-                          <td className="py-4 px-6 text-secondary">{p.telefone || 'Não informado'}</td>
-                          <td className="py-4 px-6 text-on-surface">{p.cidade ? `${p.cidade} - ${p.estado}` : 'N/A'}</td>
+                          <td className="py-4 px-6 text-secondary">{p.cpf_cnpj || 'Não informado'}</td>
+                          <td className="py-4 px-6 text-secondary">{p.whatsapp}</td>
+                          <td className="py-4 px-6 text-on-surface">{p.cidade ? `${p.cidade} - ${p.uf || ''}` : 'N/A'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -305,7 +306,7 @@ export default function Produtores() {
           <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-lg w-full space-y-6 border border-outline-variant/30">
             <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
               <h3 className="text-xl font-headline font-bold text-on-surface">Cadastrar Novo Produtor</h3>
-              <button onClick={() => setModalAberto(false)} className="text-secondary hover:text-on-surface">
+              <button onClick={() => setModalAberto(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
@@ -319,7 +320,7 @@ export default function Produtores() {
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   placeholder="Ex: João da Silva"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none text-on-surface"
                 />
               </div>
 
@@ -329,19 +330,20 @@ export default function Produtores() {
                   <input
                     type="text"
                     value={cpfCnpj}
-                    onChange={(e) => setCnpj(e.target.value)}
+                    onChange={(e) => setCpfCnpj(e.target.value)}
                     placeholder="000.000.000-00"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none text-on-surface"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">Telefone / WhatsApp</label>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">WhatsApp / Telefone</label>
                   <input
                     type="text"
-                    value={telefone}
-                    onChange={(e) => setTelefone(e.target.value)}
+                    required
+                    value={whatsapp}
+                    onChange={(e) => setWhatsapp(e.target.value)}
                     placeholder="(00) 00000-0000"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none text-on-surface"
                   />
                 </div>
               </div>
@@ -354,17 +356,18 @@ export default function Produtores() {
                     value={cidade}
                     onChange={(e) => setCidade(e.target.value)}
                     placeholder="Nome da Cidade"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none text-on-surface"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">UF</label>
                   <input
                     type="text"
-                    value={estado}
-                    onChange={(e) => setEstado(e.target.value)}
+                    maxLength={2}
+                    value={uf}
+                    onChange={(e) => setUf(e.target.value.toUpperCase())}
                     placeholder="UF"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none uppercase"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none uppercase text-on-surface"
                   />
                 </div>
               </div>
@@ -373,14 +376,14 @@ export default function Produtores() {
                 <button
                   type="button"
                   onClick={() => setModalAberto(false)}
-                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low"
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={salvando}
-                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
                 >
                   {salvando ? 'Salvando...' : 'Salvar Produtor'}
                 </button>

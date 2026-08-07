@@ -1,27 +1,78 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../services/api'
 
 export default function CadastrarFazenda() {
   const navigate = useNavigate()
 
-  const [produtor, setProdutor] = useState('')
+  // Estados dos Campos e Formulário
   const [nomeFazenda, setNomeFazenda] = useState('')
-  const [inscricaoEstadual, setInscricaoEstadual] = useState('')
-  const [cidade, setCidade] = useState('')
-  const [estado, setEstado] = useState('')
-  const [observacoes, setObservacoes] = useState('')
+  const [produtorId, setProdutorId] = useState('')
+  const [produtores, setProdutores] = useState([])
+  
+  const [carregandoProdutores, setCarregandoProdutores] = useState(true)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
 
-  const handleSubmit = (e) => {
+  // 1. Busca a lista de produtores reais do banco para popular o <select>
+  useEffect(() => {
+    async function carregarProdutores() {
+      try {
+        const resposta = await apiFetch('/produtores/')
+        if (!resposta.ok) {
+          throw new Error('Falha ao buscar a lista de produtores.')
+        }
+        const dados = await resposta.json()
+        setProdutores(dados)
+        if (dados.length > 0) {
+          setProdutorId(dados[0].id) // Seleciona o primeiro por padrão
+        }
+      } catch (err) {
+        setErro(err.message)
+      } finally {
+        setCarregandoProdutores(false)
+      }
+    }
+    carregarProdutores()
+  }, [])
+
+  // 2. Envia a nova fazenda para o banco de dados
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    alert('Fazenda cadastrada com sucesso!')
-    navigate('/cadastros')
+    if (!produtorId) {
+      alert('Selecione um produtor responsável!')
+      return
+    }
+
+    setSalvando(true)
+
+    try {
+      const resposta = await apiFetch('/fazendas/', {
+        method: 'POST',
+        body: JSON.stringify({
+          nome: nomeFazenda,
+          produtor_id: Number(produtorId),
+        }),
+      })
+
+      if (!resposta.ok) {
+        throw new Error('Erro ao cadastrar fazenda no banco de dados.')
+      }
+
+      alert('Fazenda cadastrada com sucesso!')
+      navigate('/produtores')
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setSalvando(false)
+    }
   }
 
   return (
-    <div className="bg-surface text-on-surface antialiased flex h-screen overflow-hidden animate-fade-in">
-      {/* SideNavBar Padronizada */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-8 px-2 pt-4">
+    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in">
+      {/* SideNavBar Fixa */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
+        <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-on-primary text-xl">
@@ -37,7 +88,7 @@ export default function CadastrarFazenda() {
           </p>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
           <Link
             to="/dashboard"
             className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
@@ -80,7 +131,7 @@ export default function CadastrarFazenda() {
           </Link>
         </nav>
 
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
+        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <a
             href="#"
             className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
@@ -89,7 +140,10 @@ export default function CadastrarFazenda() {
             Suporte
           </a>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              localStorage.removeItem('token')
+              navigate('/')
+            }}
             className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
@@ -98,212 +152,160 @@ export default function CadastrarFazenda() {
         </div>
       </aside>
 
-      <main className="flex-1 h-full flex flex-col relative overflow-hidden bg-surface md:ml-72">
-        <header className="docked full-width top-0 bg-surface dark:bg-surface-dim shadow-[0_4px_20px_rgba(46,50,48,0.06)] z-10 hidden md:flex justify-between items-center px-6 py-3 w-full border-b border-outline-variant/20 md:left-72">
-          <div className="flex items-center">
-            <h2 className="font-headline text-2xl font-bold text-primary dark:text-primary-fixed-dim">
-              Terra Nova AgroCapital
-            </h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <button className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors active:scale-95 duration-200">
-              <span className="material-symbols-outlined">notifications</span>
-            </button>
-            <div className="h-8 w-8 rounded-full bg-tertiary-container flex items-center justify-center overflow-hidden border-2 border-surface-container cursor-pointer">
-              <img
-                alt="User profile photo"
-                className="w-full h-full object-cover"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBz8aDiQ_xHN8yrKPLJ7bV6wYmmDvlHdoDCZi6e-vLVajcQQC8fXAkKXIkMzKpgQdE8Gp5_HCEfqJJjmslo6h1MV0U00FGHJqigtEaxQmWT8WjB185MHUINZWC3Z7QPCeEhzJR0SwjI4kK4WoAP7AkwJJgPe5Zi6v69_cfOa40g1ngWn72IErSCG5ZWOCMQ08M0sc2RBlGuE6cxI1buPXCRqj27X4fKBGxN0DlKCfT7HrNqJTs-rc2h9cE4Ak-NjddJwOYUp6LPCdg"
-              />
+      {/* Main Content Wrapper */}
+      <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
+        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
+          <div className="flex justify-between items-center px-8 h-full w-full">
+            <div className="flex-1 flex items-center">
+              <div className="relative w-64">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
+                  search
+                </span>
+                <input
+                  className="w-full bg-surface-container rounded-full py-1.5 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary focus:outline-none"
+                  placeholder="Buscar..."
+                  type="text"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
+                <span className="material-symbols-outlined">notifications</span>
+              </button>
+              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
+                <span className="material-symbols-outlined">settings</span>
+              </button>
+              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
+                <img
+                  alt="Broker Profile"
+                  className="w-full h-full object-cover"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
+                />
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-4xl mx-auto w-full">
-            <div className="mb-8">
-              <div className="flex items-center gap-2 text-sm font-label text-on-surface-variant mb-2">
-                <Link to="/cadastros" className="hover:text-primary transition-colors">
-                  Central de Cadastros
-                </Link>
-                <span className="material-symbols-outlined text-base">chevron_right</span>
-                <span className="text-primary font-medium">Nova Fazenda</span>
-              </div>
-              <h1 className="font-headline text-3xl md:text-4xl font-bold text-on-surface mb-2">
-                Cadastrar Nova Fazenda
-              </h1>
-              <p className="font-body text-on-surface-variant text-lg">
-                Insira os dados da propriedade para vinculá-la a um produtor cadastrado.
-              </p>
-            </div>
-
-            <div className="bg-surface-container-lowest rounded-xl shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10 p-6 md:p-8">
-              <form onSubmit={handleSubmit}>
-                <div className="mb-8 p-4 bg-surface-container-low rounded-lg border border-outline-variant/20">
-                  <label
-                    className="block font-body text-sm font-semibold text-on-surface mb-2"
-                    htmlFor="producerSelect"
-                  >
-                    Selecione o Produtor Proprietário *
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="material-symbols-outlined text-outline">
-                        search
-                      </span>
-                    </div>
-                    <select
-                      className="block w-full pl-10 pr-10 py-3 text-base border-outline-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm rounded-lg bg-surface text-on-surface appearance-none"
-                      id="producerSelect"
-                      value={produtor}
-                      onChange={(e) => setProdutor(e.target.value)}
-                    >
-                      <option disabled value="">
-                        Buscar produtor...
-                      </option>
-                      <option value="1">João Silva - Fazenda Esperança</option>
-                      <option value="2">
-                        Maria Oliveira - Agropecuária Vale Verde
-                      </option>
-                      <option value="3">Carlos Santos - Sítio São José</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="material-symbols-outlined text-outline">
-                        arrow_drop_down
-                      </span>
-                    </div>
+        {/* Page Canvas */}
+        <main className="flex-1 p-8 mt-16 bg-surface-container-lowest overflow-y-auto">
+          <div className="max-w-4xl mx-auto mb-8">
+            <nav className="flex text-sm text-on-surface-variant mb-3 font-body">
+              <ol className="inline-flex items-center space-x-1 md:space-x-3">
+                <li>
+                  <Link to="/cadastros" className="hover:text-primary transition-colors">
+                    Central de Cadastros
+                  </Link>
+                </li>
+                <li>
+                  <div className="flex items-center">
+                    <span className="material-symbols-outlined text-sm mx-1">chevron_right</span>
+                    <Link to="/produtores" className="hover:text-primary transition-colors ml-1 md:ml-2">
+                      Produtores
+                    </Link>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label
-                      className="block font-body text-sm font-semibold text-on-surface mb-2"
-                      htmlFor="farmName"
-                    >
-                      Nome da Fazenda *
-                    </label>
-                    <input
-                      className="block w-full px-4 py-3 text-base border border-outline-variant rounded-lg bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:border-primary"
-                      id="farmName"
-                      placeholder="Ex: Fazenda Boa Vista"
-                      type="text"
-                      value={nomeFazenda}
-                      onChange={(e) => setNomeFazenda(e.target.value)}
-                    />
+                </li>
+                <li aria-current="page">
+                  <div className="flex items-center">
+                    <span className="material-symbols-outlined text-sm mx-1">chevron_right</span>
+                    <span className="text-primary font-medium ml-1 md:ml-2">Nova Fazenda</span>
                   </div>
-                  <div>
-                    <div className="flex justify-between items-baseline mb-2">
-                      <label
-                        className="block font-body text-sm font-semibold text-on-surface"
-                        htmlFor="stateRegistration"
-                      >
-                        Inscrição Estadual da Fazenda
-                      </label>
-                      <span className="text-xs text-outline font-body">
-                        Opcional
-                      </span>
-                    </div>
-                    <input
-                      className="block w-full px-4 py-3 text-base border border-outline-variant rounded-lg bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:border-primary"
-                      id="stateRegistration"
-                      placeholder="000.000.000.000"
-                      type="text"
-                      value={inscricaoEstadual}
-                      onChange={(e) => setInscricaoEstadual(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="md:col-span-2">
-                    <label
-                      className="block font-body text-sm font-semibold text-on-surface mb-2"
-                      htmlFor="city"
-                    >
-                      Cidade *
-                    </label>
-                    <input
-                      className="block w-full px-4 py-3 text-base border border-outline-variant rounded-lg bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:border-primary"
-                      id="city"
-                      placeholder="Digite a cidade"
-                      type="text"
-                      value={cidade}
-                      onChange={(e) => setCidade(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="block font-body text-sm font-semibold text-on-surface mb-2"
-                      htmlFor="state"
-                    >
-                      Estado *
-                    </label>
-                    <div className="relative">
-                      <select
-                        className="block w-full pl-4 pr-10 py-3 text-base border border-outline-variant rounded-lg bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:border-primary appearance-none"
-                        id="state"
-                        value={estado}
-                        onChange={(e) => setEstado(e.target.value)}
-                      >
-                        <option disabled value="">
-                          UF
-                        </option>
-                        <option value="SP">SP</option>
-                        <option value="MG">MG</option>
-                        <option value="MT">MT</option>
-                        <option value="GO">GO</option>
-                        <option value="PR">PR</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <span className="material-symbols-outlined text-outline">
-                          arrow_drop_down
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mb-8">
-                  <label
-                    className="block font-body text-sm font-semibold text-on-surface mb-2"
-                    htmlFor="logisticsNotes"
-                  >
-                    Observações de Logística/Acesso
-                  </label>
-                  <textarea
-                    className="block w-full px-4 py-3 text-base border border-outline-variant rounded-lg bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:border-primary resize-y"
-                    id="logisticsNotes"
-                    placeholder="Descreva as condições da estrada, pontos de referência ou restrições de veículos..."
-                    rows="4"
-                    value={observacoes}
-                    onChange={(e) => setObservacoes(e.target.value)}
-                  ></textarea>
-                </div>
-
-                <div className="flex flex-col-reverse sm:flex-row justify-end items-center gap-4 pt-6 border-t border-outline-variant/20">
-                  <button
-                    className="w-full sm:w-auto px-6 py-3 rounded-lg font-body font-semibold text-primary bg-transparent border border-primary hover:bg-primary-container/20 transition-colors duration-200 cursor-pointer"
-                    type="button"
-                    onClick={() => navigate('/cadastros')}
-                  >
-                    Voltar
-                  </button>
-                  <button
-                    className="w-full sm:w-auto px-6 py-3 rounded-lg font-body font-semibold text-on-primary bg-primary hover:bg-surface-tint shadow-sm transition-colors duration-200 flex items-center justify-center gap-2 cursor-pointer"
-                    type="submit"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">
-                      save
-                    </span>
-                    Cadastrar Fazenda
-                  </button>
-                </div>
-              </form>
-            </div>
+                </li>
+              </ol>
+            </nav>
+            <h2 className="text-4xl font-headline font-bold text-on-surface">
+              Cadastrar Nova Fazenda
+            </h2>
           </div>
-        </div>
-      </main>
+
+          <form className="max-w-4xl mx-auto space-y-8" onSubmit={handleSubmit}>
+            <div className="bg-surface-bright rounded-xl p-8 shadow-sm border border-outline-variant/10 space-y-6 font-body">
+              <div className="flex items-center gap-3 pb-4 border-b border-surface-container-high">
+                <span className="material-symbols-outlined text-primary text-2xl">
+                  landscape
+                </span>
+                <h3 className="text-xl font-headline font-semibold text-on-surface">
+                  Informações da Propriedade
+                </h3>
+              </div>
+
+              {erro && (
+                <div className="p-3 bg-error-container text-on-error-container text-sm rounded-xl font-medium">
+                  {erro}
+                </div>
+              )}
+
+              {/* Seleção do Produtor Responsável */}
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-on-surface-variant">
+                  Produtor Proprietário / Responsável
+                </label>
+                {carregandoProdutores ? (
+                  <p className="text-sm text-secondary">Carregando produtores do banco...</p>
+                ) : produtores.length === 0 ? (
+                  <div className="p-3 bg-warning-container text-sm rounded-lg">
+                    Nenhum produtor cadastrado.{' '}
+                    <Link to="/produtores" className="underline font-bold">
+                      Cadastre um produtor primeiro.
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={produtorId}
+                      onChange={(e) => setProdutorId(e.target.value)}
+                      required
+                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-4 pr-10 py-3 text-on-surface appearance-none focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                    >
+                      {produtores.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome} (ID #{p.id})
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Nome da Fazenda */}
+              <div className="flex flex-col gap-2">
+                <label htmlFor="nomeFazenda" className="text-sm font-semibold text-on-surface-variant">
+                  Nome da Fazenda / Propriedade
+                </label>
+                <input
+                  type="text"
+                  required
+                  id="nomeFazenda"
+                  placeholder="Ex: Fazenda Santa Maria"
+                  value={nomeFazenda}
+                  onChange={(e) => setNomeFazenda(e.target.value)}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center justify-end gap-4 pt-4 pb-12 font-body">
+              <button
+                type="button"
+                onClick={() => navigate('/produtores')}
+                className="px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant bg-surface-bright hover:bg-surface-container-low font-semibold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando || produtores.length === 0}
+                className="px-8 py-3 bg-primary text-on-primary rounded-xl font-semibold shadow-sm hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {salvando ? 'Salvando...' : 'Salvar Fazenda'}
+              </button>
+            </div>
+          </form>
+        </main>
+      </div>
     </div>
   )
 }

@@ -10,6 +10,8 @@ import CadastrarEmpresa from './pages/CadastrarEmpresa'
 import DetalhesEmpresa from './pages/DetalhesEmpresa'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
+import Ofertas from './pages/Ofertas'
+import DetalhesContrato from './pages/DetalhesContrato'
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
       <Route path="/detalhes-empresa" element={<DetalhesEmpresa />} />
       <Route path="/relatorios" element={<Relatorios />} />
       <Route path="/configuracoes" element={<Configuracoes />} />
+      <Route path="/ofertas" element={<Ofertas />} />
+      <Route path="/detalhes-contrato" element={<DetalhesContrato />} />
     </Routes>
   )
 }

@@ -1,13 +1,44 @@
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../services/api'
 
 export default function Dashboard() {
   const navigate = useNavigate()
 
+  const [contratos, setContratos] = useState([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    async function carregarDashboard() {
+      try {
+        const resposta = await apiFetch('/contratos/')
+        if (!resposta.ok) {
+          throw new Error('Falha ao buscar contratos no banco de dados.')
+        }
+        const dados = await resposta.json()
+        setContratos(dados)
+      } catch (err) {
+        setErro(err.message)
+      } finally {
+        setCarregando(false)
+      }
+    }
+
+    carregarDashboard()
+  }, [])
+
+  // Métricas Calculadas Dinamicamente
+  const totalContratos = contratos.length
+  const volumeTotalSacas = contratos.reduce((acc, c) => acc + (Number(c.volume) || 0), 0)
+  const comissaoTotal = contratos.reduce((acc, c) => acc + (Number(c.valor_comissao) || 0), 0)
+  const valorTotalMovimentado = contratos.reduce((acc, c) => acc + (Number(c.valor_total) || 0), 0)
+
   return (
-    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
-      {/* SideNavBar */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-8 px-2 pt-4">
+    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
+      {/* SideNavBar Fixa */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
+        <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-on-primary text-xl">
@@ -23,18 +54,12 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Links de Navegação com Animações Ativas */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
           <Link
             to="/dashboard"
             className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
-            <span
-              className="material-symbols-outlined mr-3"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              dashboard
-            </span>
+            <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
           </Link>
           <Link
@@ -67,16 +92,12 @@ export default function Dashboard() {
           </Link>
         </nav>
 
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
+        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              localStorage.removeItem('token')
+              navigate('/')
+            }}
             className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
@@ -85,221 +106,163 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Main Wrapper */}
-      <div className="flex-1 flex flex-col min-h-screen md:ml-72">
+      {/* Main Content Wrapper */}
+      <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
         {/* TopAppBar */}
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
+        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
-            <div className="flex-1 flex items-center">
-              <div className="relative w-64">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
-                  search
-                </span>
-                <input
-                  className="w-full bg-surface-container rounded-full py-1.5 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary focus:outline-none transition-all"
-                  placeholder="Buscar..."
-                  type="text"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low transition-opacity active:opacity-80">
-                <span className="material-symbols-outlined">notifications</span>
-              </button>
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low transition-opacity active:opacity-80">
-                <span className="material-symbols-outlined">settings</span>
-              </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
-              </div>
-            </div>
+            <h1 className="font-headline font-bold text-lg text-on-surface">
+              Visão Geral de Negócios
+            </h1>
+            <Link
+              to="/fechamento"
+              className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              Novo Fechamento
+            </Link>
           </div>
         </header>
 
-        {/* Main Content Canvas */}
-        <main className="flex-1 mt-16 p-8 overflow-y-auto">
-          {/* Welcome Header */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-headline font-semibold text-on-background mb-1">
-              Bem-vindo, João Silva
-            </h2>
-            <p className="text-secondary text-lg">12 de Outubro de 2023</p>
-          </div>
+        {/* Content Canvas */}
+        <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
+          <div className="max-w-7xl mx-auto space-y-8 pb-16">
+            {/* Header */}
+            <div>
+              <h2 className="text-3xl font-headline font-bold text-on-surface">
+                Painel Principal
+              </h2>
+              <p className="text-secondary text-sm mt-1">
+                Acompanhe o volume acumulado e as comissões geradas no sistema.
+              </p>
+            </div>
 
-          {/* KPI Bento Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {/* Card 1 */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-secondary-container text-on-secondary-container rounded-lg">
-                  <span
-                    className="material-symbols-outlined"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    description
+            {/* CARDS DE KPIS REAIS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Card 1: Contratos Emitidos */}
+              <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between text-secondary">
+                  <span className="text-xs font-bold uppercase">Contratos Fechados</span>
+                  <span className="material-symbols-outlined text-primary">description</span>
+                </div>
+                <div className="mt-4">
+                  <span className="text-3xl font-bold font-mono text-on-surface">
+                    {carregando ? '-' : totalContratos}
                   </span>
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-secondary mb-1">
-                  Total de Contratos (Mês)
-                </p>
-                <p className="text-3xl font-headline font-bold text-on-surface">
-                  124
-                </p>
-              </div>
-            </div>
 
-            {/* Card 2 */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-primary-container text-on-primary-container rounded-lg">
-                  <span
-                    className="material-symbols-outlined"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    agriculture
+              {/* Card 2: Volume Total (Sacas) */}
+              <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between text-secondary">
+                  <span className="text-xs font-bold uppercase">Volume Negociado</span>
+                  <span className="material-symbols-outlined text-primary">grain</span>
+                </div>
+                <div className="mt-4">
+                  <span className="text-3xl font-bold font-mono text-on-surface">
+                    {carregando ? '-' : `${volumeTotalSacas.toLocaleString('pt-BR')} sc`}
                   </span>
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-secondary mb-1">
-                  Volume Negociado (Sacas)
-                </p>
-                <p className="text-3xl font-headline font-bold text-primary">
-                  45.200
-                </p>
-              </div>
-            </div>
 
-            {/* Card 3 */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-tertiary-container text-on-tertiary-container rounded-lg">
-                  <span
-                    className="material-symbols-outlined"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    payments
+              {/* Card 3: Movimentação Financeira */}
+              <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between text-secondary">
+                  <span className="text-xs font-bold uppercase">Valor Total do Grão</span>
+                  <span className="material-symbols-outlined text-primary">payments</span>
+                </div>
+                <div className="mt-4">
+                  <span className="text-2xl font-bold font-mono text-primary">
+                    {carregando ? '-' : `R$ ${valorTotalMovimentado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                   </span>
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-secondary mb-1">
-                  Comissão Projetada (R$)
-                </p>
-                <p className="text-3xl font-headline font-bold text-on-surface">
-                  R$ 85.400,00
-                </p>
-              </div>
-            </div>
 
-            {/* Card 4 */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:border-primary/30 transition-all duration-200 hover:-translate-y-0.5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-error-container text-on-error-container rounded-lg">
-                  <span
-                    className="material-symbols-outlined"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    timer
+              {/* Card 4: Comissão Total */}
+              <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between text-secondary">
+                  <span className="text-xs font-bold uppercase">Comissão Gerada</span>
+                  <span className="material-symbols-outlined text-tertiary">savings</span>
+                </div>
+                <div className="mt-4">
+                  <span className="text-2xl font-bold font-mono text-tertiary">
+                    {carregando ? '-' : `R$ ${comissaoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                   </span>
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-secondary mb-1">
-                  Contratos Pendentes
-                </p>
-                <p className="text-3xl font-headline font-bold text-on-surface">
-                  8
-                </p>
-              </div>
             </div>
-          </div>
 
-          {/* Table Section */}
-          <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
-            <div className="px-6 py-5 border-b border-outline-variant/20 flex justify-between items-center bg-surface-container-lowest">
-              <h3 className="text-xl font-headline font-semibold text-on-surface">
-                Últimos Fechamentos
-              </h3>
-              <button className="text-sm font-medium text-primary hover:text-primary-container transition-colors cursor-pointer">
-                Ver todos
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low text-secondary text-sm">
-                    <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                      Data
-                    </th>
-                    <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                      Produtor
-                    </th>
-                    <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                      Comprador
-                    </th>
-                    <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
-                      Volume (Sacas)
-                    </th>
-                    <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-center">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
-                  <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                    <td className="py-4 px-6 text-on-surface">12/10/2023</td>
-                    <td className="py-4 px-6 font-medium text-on-surface">
-                      Fazenda Santa Helena
-                    </td>
-                    <td className="py-4 px-6 text-secondary">Cargill</td>
-                    <td className="py-4 px-6 text-right font-medium text-on-surface">
-                      5.000
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-container/30 text-primary">
-                        Concluído
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors">
-                    <td className="py-4 px-6 text-on-surface">11/10/2023</td>
-                    <td className="py-4 px-6 font-medium text-on-surface">
-                      João Pereira
-                    </td>
-                    <td className="py-4 px-6 text-secondary">Bunge</td>
-                    <td className="py-4 px-6 text-right font-medium text-on-surface">
-                      2.500
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-container text-on-secondary-container">
-                        Em Análise
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-surface-container-lowest/50 transition-colors">
-                    <td className="py-4 px-6 text-on-surface">10/10/2023</td>
-                    <td className="py-4 px-6 font-medium text-on-surface">
-                      Agropecuária Vale
-                    </td>
-                    <td className="py-4 px-6 text-secondary">Amaggi</td>
-                    <td className="py-4 px-6 text-right font-medium text-on-surface">
-                      8.000
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tertiary-container/30 text-tertiary">
-                        Pendente
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            {/* TABELA DE CONTRATOS RECENTES */}
+            <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-outline-variant/20 flex justify-between items-center">
+                <h3 className="font-headline font-bold text-lg text-on-surface">
+                  Contratos Recentes
+                </h3>
+              </div>
+
+              <div className="overflow-x-auto">
+                {carregando ? (
+                  <div className="p-12 text-center text-secondary">
+                    Carregando dados financeiros...
+                  </div>
+                ) : erro ? (
+                  <div className="p-12 text-center text-error font-medium">
+                    {erro}
+                  </div>
+                ) : contratos.length === 0 ? (
+                  <div className="p-12 text-center text-secondary">
+                    Nenhum contrato cadastrado ainda. Clique em "Novo Fechamento" para começar.
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
+                        <th className="py-3 px-6 border-b border-outline-variant/20">ID</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Data</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Commodity</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Safra</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Volume</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Preço Unit.</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Total</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Comissão</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {contratos.map((c) => (
+                        <tr
+                          key={c.id}
+                          className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
+                        >
+                          <td className="py-4 px-6 font-mono text-secondary">#{c.id}</td>
+                          <td className="py-4 px-6 text-on-surface">{c.data_fechamento}</td>
+                          <td className="py-4 px-6 font-semibold text-on-surface">{c.commodity}</td>
+                          <td className="py-4 px-6 text-secondary">{c.safra}</td>
+                          <td className="py-4 px-6 font-mono text-on-surface">
+                            {Number(c.volume).toLocaleString('pt-BR')} {c.tipo_medida}
+                          </td>
+                          <td className="py-4 px-6 font-mono text-on-surface">
+                            {c.moeda === 'USD' ? '$' : 'R$'} {Number(c.preco_unitario).toFixed(2)}
+                          </td>
+                          <td className="py-4 px-6 font-mono font-bold text-primary">
+                            {c.moeda === 'USD' ? '$' : 'R$'}{' '}
+                            {Number(c.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-4 px-6 font-mono font-bold text-tertiary">
+                            {c.moeda === 'USD' ? '$' : 'R$'}{' '}
+                            {Number(c.valor_comissao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="px-3 py-1 bg-primary-container text-on-primary-container text-xs font-bold rounded-full">
+                              {c.status || 'Fechado'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
         </main>
