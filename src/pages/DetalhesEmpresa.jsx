@@ -7,6 +7,12 @@ export default function DetalhesEmpresa() {
   const [searchParams] = useSearchParams()
   const empresaId = searchParams.get('id')
 
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
+
   // Estados de Dados do Banco
   const [empresa, setEmpresa] = useState(null)
   const [compradores, setCompradores] = useState([])
@@ -20,24 +26,49 @@ export default function DetalhesEmpresa() {
   const [telefone, setTelefone] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Função para formatar qualquer telefone/WhatsApp para um padrão visual limpo
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Função para sanitizar e incluir DDI 55 automaticamente
+  const sanitizarTelefoneWhatsApp = (num) => {
+    let limpo = (num || '').replace(/\D/g, '')
+
+    if (!limpo) {
+      throw new Error('O número de WhatsApp é obrigatório.')
+    }
+
+    // Se digitado sem DDI (ex: 10 ou 11 dígitos), insere 55 automaticamente
+    if (limpo.length === 10 || limpo.length === 11) {
+      limpo = '55' + limpo
+    }
+
+    // Valida padrão brasileiro com 55 + DDD + Número
+    if ((limpo.length !== 12 && limpo.length !== 13) || !limpo.startsWith('55')) {
+      throw new Error(
+        'Por favor, digite um número de WhatsApp válido com DDD (ex: 66 99988-7766 ou 5566999887766).'
+      )
+    }
+
+    return limpo
+  }
+
   const formatarTelefone = (num) => {
     if (!num) return 'Não informado'
     const limpo = num.replace(/\D/g, '')
 
-    // Com DDI 55 + DDD (2 dígitos) + 9 dígitos (ex: 5566999092301 -> +55 (66) 99909-2301)
     if (limpo.length === 13 && limpo.startsWith('55')) {
       return `+55 (${limpo.slice(2, 4)}) ${limpo.slice(4, 9)}-${limpo.slice(9)}`
     }
-    // Com DDI 55 + DDD (2 dígitos) + 8 dígitos (ex: 556634567890 -> +55 (66) 3456-7890)
     if (limpo.length === 12 && limpo.startsWith('55')) {
       return `+55 (${limpo.slice(2, 4)}) ${limpo.slice(4, 8)}-${limpo.slice(8)}`
     }
-    // Apenas DDD + 9 dígitos (ex: 66999092301 -> (66) 99909-2301)
     if (limpo.length === 11) {
       return `(${limpo.slice(0, 2)}) ${limpo.slice(2, 7)}-${limpo.slice(7)}`
     }
-    // Apenas DDD + 8 dígitos (ex: 6634567890 -> (66) 3456-7890)
     if (limpo.length === 10) {
       return `(${limpo.slice(0, 2)}) ${limpo.slice(2, 6)}-${limpo.slice(6)}`
     }
@@ -45,28 +76,68 @@ export default function DetalhesEmpresa() {
     return num
   }
 
-  // Carregar dados da empresa e dos compradores vinculados
+  // Carregar dados da empresa específica e seus compradores
   const carregarDadosEmpresa = async () => {
+    if (!empresaId) {
+      setErro('Nenhum ID de empresa foi fornecido na URL.')
+      setCarregando(false)
+      return
+    }
+
     setCarregando(true)
+    setErro('')
+
     try {
-      const [resEmpresas, resCompradores] = await Promise.all([
-        apiFetch('/empresas/'),
-        apiFetch('/compradores/'),
-      ])
+      // 1. Carrega Perfil do Usuário
+      try {
+        const resMe = await apiFetch('/usuarios/me')
+        if (resMe.ok) {
+          const meData = await resMe.json()
+          setPerfil(meData)
+        } else {
+          const token = localStorage.getItem('token')
+          if (token) {
+            const payloadBase64 = token.split('.')[1]
+            const payloadJson = JSON.parse(atob(payloadBase64))
+            const emailLogado = payloadJson.sub || ''
+            const resListaU = await apiFetch('/usuarios/')
+            if (resListaU.ok) {
+              const listaU = await resListaU.json()
+              const uEncontrado = listaU.find(
+                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+              )
+              if (uEncontrado) setPerfil(uEncontrado)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Erro perfil:', e)
+      }
 
-      if (!resEmpresas.ok) throw new Error('Falha ao carregar empresas.')
+      // 2. Busca Empresa por ID
+      let empresaEncontrada = null
+      const resEmpresaUnica = await apiFetch(`/empresas/${empresaId}`)
 
-      const listaEmpresas = await resEmpresas.json()
-      const empresaEncontrada = empresaId
-        ? listaEmpresas.find((e) => String(e.id) === String(empresaId))
-        : listaEmpresas[0]
+      if (resEmpresaUnica.ok) {
+        empresaEncontrada = await resEmpresaUnica.json()
+      } else {
+        const resListaEmpresas = await apiFetch('/empresas/')
+        if (resListaEmpresas.ok) {
+          const listaEmpresas = await resListaEmpresas.json()
+          empresaEncontrada = listaEmpresas.find(
+            (e) => String(e.id) === String(empresaId)
+          )
+        }
+      }
 
       if (!empresaEncontrada) {
-        throw new Error('Empresa não encontrada no banco de dados.')
+        throw new Error(`Empresa com ID #${empresaId} não foi encontrada no banco.`)
       }
 
       setEmpresa(empresaEncontrada)
 
+      // 3. Busca Compradores vinculados
+      const resCompradores = await apiFetch('/compradores/')
       if (resCompradores.ok) {
         const todosCompradores = await resCompradores.json()
         const vinculados = todosCompradores.filter(
@@ -85,28 +156,41 @@ export default function DetalhesEmpresa() {
     carregarDadosEmpresa()
   }, [empresaId])
 
-  // Salvar novo comprador no banco de dados
+  // Salvar novo comprador garantindo sanitização do DDI 55
   const handleCadastrarComprador = async (e) => {
     e.preventDefault()
-    if (!empresa) return
 
-    setSalvando(true)
+    if (!empresa || !empresa.id) {
+      alert('Erro: Nenhuma empresa carregada para vincular o comprador.')
+      return
+    }
+
     try {
+      const telefoneValidado = sanitizarTelefoneWhatsApp(telefone)
+      setSalvando(true)
+
       const resposta = await apiFetch('/compradores/', {
         method: 'POST',
         body: JSON.stringify({
           nome,
           email,
-          telefone: telefone.replace(/\D/g, ''), // Salva apenas os dígitos no banco
+          telefone: telefoneValidado,
           empresa_id: Number(empresa.id),
         }),
       })
 
       if (!resposta.ok) {
-        throw new Error('Erro ao salvar comprador. Verifique se o e-mail já não está cadastrado.')
+        const erroDados = await resposta.json().catch(() => ({}))
+        throw new Error(
+          erroDados.detail || 'Erro ao salvar comprador. Verifique os dados.'
+        )
       }
 
-      alert('Comprador cadastrado com sucesso!')
+      alert(
+        `Comprador cadastrado com sucesso na empresa ${
+          empresa.razao_social || empresa.nome
+        }!`
+      )
       setModalAberto(false)
       setNome('')
       setEmail('')
@@ -119,9 +203,9 @@ export default function DetalhesEmpresa() {
     }
   }
 
-  // Deletar comprador do banco de dados
   const handleDeletarComprador = async (id, nomeComprador) => {
-    if (!window.confirm(`Tem certeza que deseja remover ${nomeComprador}?`)) return
+    if (!window.confirm(`Tem certeza que deseja remover ${nomeComprador}?`))
+      return
 
     try {
       const resposta = await apiFetch(`/compradores/${id}`, {
@@ -141,7 +225,7 @@ export default function DetalhesEmpresa() {
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa Padronizada */}
+      {/* SideNavBar Fixa */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -216,7 +300,7 @@ export default function DetalhesEmpresa() {
         </div>
       </aside>
 
-      {/* Main Wrapper com Rolagem no Canvas */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
         {/* TopAppBar */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
@@ -240,18 +324,23 @@ export default function DetalhesEmpresa() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Canvas de Conteúdo com Rolagem Independente */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
           <div className="max-w-7xl mx-auto space-y-8 pb-16">
             {carregando ? (
@@ -259,8 +348,14 @@ export default function DetalhesEmpresa() {
                 Carregando informações da empresa...
               </div>
             ) : erro ? (
-              <div className="p-12 text-center text-error bg-surface-bright rounded-2xl border border-outline-variant/20 font-bold">
-                {erro}
+              <div className="p-12 text-center text-error bg-surface-bright rounded-2xl border border-outline-variant/20 font-bold space-y-4">
+                <p>{erro}</p>
+                <button
+                  onClick={() => navigate('/empresas')}
+                  className="bg-primary text-on-primary px-4 py-2 rounded-xl text-xs cursor-pointer"
+                >
+                  Voltar para Lista de Empresas
+                </button>
               </div>
             ) : (
               <div className="flex flex-col w-full gap-8">
@@ -284,7 +379,7 @@ export default function DetalhesEmpresa() {
 
                 {/* Grid 3 Colunas */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Coluna 1: Dados Corporativos (1/3) */}
+                  {/* Coluna 1: Dados Corporativos */}
                   <div className="flex flex-col gap-6 lg:col-span-1">
                     <div className="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-outline-variant/20 flex flex-col gap-6">
                       <h2 className="text-lg font-headline font-bold text-on-surface flex items-center gap-2">
@@ -315,7 +410,9 @@ export default function DetalhesEmpresa() {
                             Localização
                           </span>
                           <span className="text-base font-body text-on-surface">
-                            {empresa.cidade ? `${empresa.cidade} - ${empresa.estado}` : 'N/A'}
+                            {empresa.cidade
+                              ? `${empresa.cidade} - ${empresa.estado}`
+                              : 'N/A'}
                           </span>
                         </div>
                         <div className="flex flex-col gap-1">
@@ -330,7 +427,7 @@ export default function DetalhesEmpresa() {
                     </div>
                   </div>
 
-                  {/* Coluna 2: Lista de Compradores (2/3) */}
+                  {/* Coluna 2: Lista de Compradores */}
                   <div className="lg:col-span-2 flex flex-col gap-6">
                     <div className="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-outline-variant/20 flex flex-col gap-6 flex-1">
                       <div className="flex items-center justify-between">
@@ -358,7 +455,9 @@ export default function DetalhesEmpresa() {
                           </div>
                         ) : (
                           compradores.map((c) => {
-                            const numDigitos = c.telefone ? c.telefone.replace(/\D/g, '') : ''
+                            const numDigitos = c.telefone
+                              ? c.telefone.replace(/\D/g, '')
+                              : ''
                             const linkWhatsApp = numDigitos.startsWith('55')
                               ? numDigitos
                               : `55${numDigitos}`
@@ -396,7 +495,9 @@ export default function DetalhesEmpresa() {
                                   </a>
 
                                   <button
-                                    onClick={() => handleDeletarComprador(c.id, c.nome)}
+                                    onClick={() =>
+                                      handleDeletarComprador(c.id, c.nome)
+                                    }
                                     title="Remover Comprador"
                                     className="p-2 rounded-lg text-secondary hover:text-error hover:bg-error-container/30 transition-colors cursor-pointer"
                                   >
@@ -416,7 +517,8 @@ export default function DetalhesEmpresa() {
                     <div className="w-full rounded-2xl bg-surface-container-low border border-outline-variant/20 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div>
                         <h3 className="font-headline font-bold text-on-surface text-lg">
-                          Pronto para fechar negócio com a {empresa.razao_social || empresa.nome}?
+                          Pronto para fechar negócio com a{' '}
+                          {empresa.razao_social || empresa.nome}?
                         </h3>
                         <p className="text-secondary text-sm mt-1">
                           Inicie a emissão do contrato de corretagem direto para esta empresa.
@@ -443,7 +545,7 @@ export default function DetalhesEmpresa() {
           <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-md w-full space-y-6 border border-outline-variant/30">
             <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
               <h3 className="text-xl font-headline font-bold text-on-surface">
-                Novo Comprador ({empresa?.razao_social})
+                Novo Comprador ({empresa?.razao_social || empresa?.nome})
               </h3>
               <button
                 onClick={() => setModalAberto(false)}
@@ -491,9 +593,12 @@ export default function DetalhesEmpresa() {
                   required
                   value={telefone}
                   onChange={(e) => setTelefone(e.target.value)}
-                  placeholder="Ex: (66) 99909-2301 ou 5566999092301"
+                  placeholder="Ex: (66) 99909-2301 ou 66999092301"
                   className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
                 />
+                <p className="text-[10px] text-secondary mt-1">
+                  * O código DDI 55 será incluído automaticamente caso seja omitido.
+                </p>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/20">

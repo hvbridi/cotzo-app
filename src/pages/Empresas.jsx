@@ -9,9 +9,49 @@ export default function Empresas() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
 
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
+
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
   useEffect(() => {
-    async function carregarEmpresas() {
+    async function carregarDados() {
       try {
+        // 1. Carrega Perfil do Usuário
+        try {
+          const resMe = await apiFetch('/usuarios/me')
+          if (resMe.ok) {
+            const meData = await resMe.json()
+            setPerfil(meData)
+          } else {
+            const token = localStorage.getItem('token')
+            if (token) {
+              const payloadBase64 = token.split('.')[1]
+              const payloadJson = JSON.parse(atob(payloadBase64))
+              const emailLogado = payloadJson.sub || ''
+              const resListaU = await apiFetch('/usuarios/')
+              if (resListaU.ok) {
+                const listaU = await resListaU.json()
+                const uEncontrado = listaU.find(
+                  (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+                )
+                if (uEncontrado) setPerfil(uEncontrado)
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Erro ao buscar perfil:', e)
+        }
+
+        // 2. Carrega Empresas
         const resposta = await apiFetch('/empresas/')
         if (!resposta.ok) {
           throw new Error('Falha ao carregar empresas do servidor.')
@@ -24,7 +64,8 @@ export default function Empresas() {
         setCarregando(false)
       }
     }
-    carregarEmpresas()
+
+    carregarDados()
   }, [])
 
   const empresasFiltradas = empresas.filter((emp) => {
@@ -35,7 +76,7 @@ export default function Empresas() {
   })
 
   return (
-    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
+    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in font-body">
       {/* SideNavBar Padronizada */}
       <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-8 px-2 pt-4">
@@ -120,7 +161,7 @@ export default function Empresas() {
 
       {/* Main Wrapper */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-72">
-        {/* TopAppBar */}
+        {/* TopAppBar com Perfil Dinâmico */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -142,12 +183,20 @@ export default function Empresas() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+
+              {/* Badge do Usuário Logado */}
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
               </div>
             </div>
           </div>
@@ -163,7 +212,9 @@ export default function Empresas() {
                   <Link to="/cadastros" className="hover:text-primary transition-colors">
                     Central de Cadastros
                   </Link>
-                  <span className="material-symbols-outlined text-base">chevron_right</span>
+                  <span className="material-symbols-outlined text-base">
+                    chevron_right
+                  </span>
                   <span className="text-primary font-medium">Empresas</span>
                 </div>
                 <h2 className="font-headline text-3xl font-semibold text-on-background mb-1">
@@ -256,9 +307,10 @@ export default function Empresas() {
                             {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'N/A'}
                           </td>
                           <td className="py-4 px-6 text-right">
+                            {/* Passa o ID correto da empresa na rota */}
                             <button
-                              onClick={() => navigate('/detalhes-empresa')}
-                              className="text-primary hover:text-primary-container font-medium text-sm transition-colors cursor-pointer"
+                              onClick={() => navigate(`/detalhes-empresa?id=${emp.id}`)}
+                              className="text-primary hover:text-primary-container font-bold text-sm transition-colors cursor-pointer"
                             >
                               Ver Detalhes
                             </button>
