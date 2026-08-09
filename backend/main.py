@@ -68,7 +68,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", # Se o dev estiver testando no próprio PC
-        "http://localhost:5173"], # Em produção, você pode trocar "*" pelo link exato do seu site frontend
+        "http://localhost:5173", "https://cotzo-app.vercel.app"], # Em produção, você pode trocar "*" pelo link exato do seu site frontend
     allow_credentials=True,
     allow_methods=["*"], # Permite GET, POST, PUT, DELETE...
     allow_headers=["*"],
