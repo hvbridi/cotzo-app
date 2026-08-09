@@ -388,7 +388,9 @@ def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado
 class OfertaCreate(BaseModel):
     produtor_id: int
     fazenda_id: int
+    commodity: str = "Soja"
     volume: int
+    tipo_medida: str = "Sacas"
     preco: float
     moeda: str = "BRL"
     data_entrega_embarque: date # ou date
@@ -428,7 +430,9 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     nova_oferta = Oferta(
         produtor_id=dados.produtor_id,
         fazenda_id=dados.fazenda_id,
+        commodity=dados.commodity,
         volume=dados.volume,
+        tipo_medida=dados.tipo_medida,
         preco=dados.preco,
         moeda=dados.moeda,
         data_entrega_embarque=dados.data_entrega_embarque
@@ -446,9 +450,10 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
         # Monta o texto do WhatsApp incluindo os dados do corretor
         texto_mensagem = (
             f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
+            f"🌱 *Produto:* {dados.commodity}\n"
             f"👤 *Produtor:* {produtor_nome}\n"
             f"🚜 *Fazenda:* {fazenda_nome}\n"
-            f"📦 *Volume:* {dados.volume:,} sacas\n"
+            f"📦 *Volume:* {dados.volume:,} {dados.tipo_medida.lower()}\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
             f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
             f"👨‍💼 *Corretor:* {corretor.nome}\n"
@@ -477,9 +482,10 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
     oferta = db.get(Oferta, oferta_id)
     if not oferta:
         raise HTTPException(status_code=404, detail="Oferta não encontrada.")
-        
+    campos_permitidos = ["commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
+    
     for key, value in dados_atualizados.items():
-        if hasattr(oferta, key) and key != "id":
+        if hasattr(oferta, key) and key in campos_permitidos:
             setattr(oferta, key, value)
             
     db.add(oferta)
