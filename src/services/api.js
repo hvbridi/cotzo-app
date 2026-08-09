@@ -1,24 +1,24 @@
-// Cole aqui o link da nuvem que seu colega te passar (sem a barra / no final)
-export const API_URL = "https://cotzo-app-production.up.railway.app" 
+export const API_URL = import.meta.env.VITE_API_URL || 'https://cotzo-app-production.up.railway.app'
 
-// Função auxiliar para fazer requisições enviando o Token de acesso automaticamente
 export async function apiFetch(endpoint, options = {}) {
   const token = localStorage.getItem('token')
 
   const headers = {
     'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
-  }
-
-  // Se já tiver feito login, envia o crachá (Token) em todas as chamadas
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
   }
 
   const resposta = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
   })
+
+  // SE O SERVIDOR RETORNAR 401 (TOKEN INVÁLIDO OU EXPIRADO)
+  if (resposta.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/' // Força o redirecionamento global para a página de login
+  }
 
   return resposta
 }

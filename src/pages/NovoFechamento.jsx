@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
+import { useQueryClient } from '@tanstack/react-query'
 
 export default function Fechamento() {
   const navigate = useNavigate()
-
+  const queryClient = useQueryClient()
   // Listas vindas do Banco de Dados
   const [produtores, setProdutores] = useState([])
   const [fazendas, setFazendas] = useState([])
@@ -155,7 +156,8 @@ export default function Fechamento() {
       if (!resposta.ok) {
         throw new Error('Falha ao emitir contrato. Verifique os dados fornecidos.')
       }
-
+      queryClient.invalidateQueries({ queryKey: ['contratos'] })
+      
       alert('Contrato de Fechamento emitido com sucesso!')
       navigate('/dashboard')
     } catch (err) {

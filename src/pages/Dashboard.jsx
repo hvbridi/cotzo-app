@@ -1,32 +1,26 @@
-import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../services/api'
 
 export default function Dashboard() {
   const navigate = useNavigate()
 
-  const [contratos, setContratos] = useState([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
-
-  useEffect(() => {
-    async function carregarDashboard() {
-      try {
-        const resposta = await apiFetch('/contratos/')
-        if (!resposta.ok) {
-          throw new Error('Falha ao buscar contratos no banco de dados.')
-        }
-        const dados = await resposta.json()
-        setContratos(dados)
-      } catch (err) {
-        setErro(err.message)
-      } finally {
-        setCarregando(false)
+  // Busca contratos com cache automático do React Query
+  const {
+    data: contratos = [],
+    isLoading: carregando,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['contratos'],
+    queryFn: async () => {
+      const resposta = await apiFetch('/contratos/')
+      if (!resposta.ok) {
+        throw new Error('Falha ao buscar contratos no banco de dados.')
       }
-    }
-
-    carregarDashboard()
-  }, [])
+      return resposta.json()
+    },
+  })
 
   // Métricas Calculadas Dinamicamente
   const totalContratos = contratos.length
@@ -205,9 +199,9 @@ export default function Dashboard() {
                   <div className="p-12 text-center text-secondary">
                     Carregando dados financeiros...
                   </div>
-                ) : erro ? (
+                ) : isError ? (
                   <div className="p-12 text-center text-error font-medium">
-                    {erro}
+                    {error.message}
                   </div>
                 ) : contratos.length === 0 ? (
                   <div className="p-12 text-center text-secondary">

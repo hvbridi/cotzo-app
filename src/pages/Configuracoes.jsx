@@ -8,10 +8,21 @@ export default function Configuracoes() {
   // Controle de Abas
   const [abaAtiva, setAbaAtiva] = useState('geral') // 'geral' ou 'usuarios'
 
-  // Estados dos Meus Dados (Aba Geral)
+  // Estados dos Meus Dados (Perfil Logado)
+  const [perfil, setPerfil] = useState({
+    id: null,
+    nome: '',
+    email: '',
+    telefone: '',
+    cargo: '',
+  })
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true)
+
+  // Estados do Formulário de Alteração de Senha
   const [senhaAtual, setSenhaAtual] = useState('')
   const [novaSenhaPerfil, setNovaSenhaPerfil] = useState('')
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('')
+  const [alterandoSenha, setAlterandoSenha] = useState(false)
 
   // Estados do Gerenciamento de Usuários (Aba Corretores)
   const [usuarios, setUsuarios] = useState([])
@@ -28,7 +39,121 @@ export default function Configuracoes() {
   const [novoCargo, setNovoCargo] = useState('corretor')
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
-  // Função para garantir que o número SEMPRE tenha o 55 e quantidade correta de dígitos
+  // 1. Carrega o perfil do usuário logado usando o Token JWT
+  const carregarPerfil = async () => {
+    setCarregandoPerfil(true)
+    try {
+      // Tenta buscar da rota /usuarios/me
+      const resposta = await apiFetch('/usuarios/me')
+      if (resposta.ok) {
+        const dados = await resposta.json()
+        setPerfil(dados)
+        return
+      }
+
+      // Se /usuarios/me não retornar, lê o e-mail no Token JWT de Login
+      const token = localStorage.getItem('token')
+      let emailLogado = ''
+
+      if (token) {
+        try {
+          const payloadBase64 = token.split('.')[1]
+          const payloadJson = JSON.parse(atob(payloadBase64))
+          emailLogado = payloadJson.sub || ''
+        } catch (e) {
+          console.error('Erro ao ler token JWT:', e)
+        }
+      }
+
+      // Busca no banco e filtra pelo e-mail do token
+      const resLista = await apiFetch('/usuarios/')
+      if (resLista.ok) {
+        const lista = await resLista.json()
+        const usuarioLogado = lista.find(
+          (u) => u.email.toLowerCase() === emailLogado.toLowerCase()
+        )
+
+        if (usuarioLogado) {
+          setPerfil(usuarioLogado)
+        } else if (lista.length > 0) {
+          setPerfil(lista[0])
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dados do perfil logado:', err)
+    } finally {
+      setCarregandoPerfil(false)
+    }
+  }
+
+  useEffect(() => {
+    carregarPerfil()
+  }, [])
+
+  // 2. Ação de Alterar Senha no Backend via PUT /usuarios/{id}
+  const handleAlterarSenha = async (e) => {
+    e.preventDefault()
+
+    if (novaSenhaPerfil.length < 8) {
+      alert('A nova senha deve ter no mínimo 8 caracteres.')
+      return
+    }
+
+    if (novaSenhaPerfil !== confirmarNovaSenha) {
+      alert('A nova senha e a confirmação não coincidem.')
+      return
+    }
+
+    setAlterandoSenha(true)
+
+    try {
+      let resposta
+
+      // Rota principal: Atualização direta do usuário pelo ID
+      if (perfil && perfil.id) {
+        resposta = await apiFetch(`/usuarios/${perfil.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            nome: perfil.nome,
+            email: perfil.email,
+            telefone: perfil.telefone,
+            cargo: perfil.cargo,
+            senha_hash: novaSenhaPerfil,
+          }),
+        })
+      }
+
+      // Fallback: Se não encontrou ID ou retornou erro, tenta o endpoint geral POST /alterar-senha
+      if (!resposta || !resposta.ok) {
+        resposta = await apiFetch('/alterar-senha', {
+          method: 'POST',
+          body: JSON.stringify({
+            senha_atual: senhaAtual,
+            nova_senha: novaSenhaPerfil,
+          }),
+        })
+      }
+
+      if (!resposta.ok) {
+        const erroDados = await resposta.json().catch(() => ({}))
+        throw new Error(
+          erroDados.detail ||
+            'Não foi possível atualizar a senha no servidor. Verifique os dados.'
+        )
+      }
+
+      alert('Senha atualizada com sucesso!')
+      setSenhaAtual('')
+      setNovaSenhaPerfil('')
+      setConfirmarNovaSenha('')
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setAlterandoSenha(false)
+    }
+  }
+
+  // Sanitização de telefone com DDI 55
   const sanitizarTelefoneWhatsApp = (num) => {
     let limpo = (num || '').replace(/\D/g, '')
 
@@ -36,12 +161,10 @@ export default function Configuracoes() {
       throw new Error('O número de WhatsApp é obrigatório.')
     }
 
-    // Se o usuário digitou sem DDI (ex: 66999887766 ou 11987654321 - 10 ou 11 dígitos), insere 55 automaticamente
     if (limpo.length === 10 || limpo.length === 11) {
       limpo = '55' + limpo
     }
 
-    // Valida se ficou no padrão exato brasileiro com 55 + DDD (2 dig) + Número (8 ou 9 dig)
     if ((limpo.length !== 12 && limpo.length !== 13) || !limpo.startsWith('55')) {
       throw new Error(
         'Por favor, digite um número de WhatsApp válido com DDD (ex: 66 99988-7766 ou 5566999887766).'
@@ -51,7 +174,7 @@ export default function Configuracoes() {
     return limpo
   }
 
-  // Carrega os usuários do banco ao abrir a aba
+  // Carrega lista de corretores
   const carregarUsuarios = async () => {
     setCarregandoUsuarios(true)
     try {
@@ -73,14 +196,12 @@ export default function Configuracoes() {
     }
   }, [abaAtiva])
 
-  // Cadastrar novo corretor/usuário
+  // Cadastrar novo corretor
   const handleCadastrarUsuario = async (e) => {
     e.preventDefault()
 
     try {
-      // Valida e formata o telefone para garantir o DDI 55
       const telefoneValidado = sanitizarTelefoneWhatsApp(novoTelefone)
-
       setSalvandoUsuario(true)
 
       const payload = {
@@ -122,7 +243,7 @@ export default function Configuracoes() {
     }
   }
 
-  // Deletar corretor/usuário (com trava de Admin no backend)
+  // Deletar corretor
   const handleDeletarUsuario = async (id, nome) => {
     if (!window.confirm(`Tem certeza que deseja remover o corretor "${nome}"?`))
       return
@@ -150,7 +271,6 @@ export default function Configuracoes() {
     }
   }
 
-  // Gera iniciais do nome para o avatar
   const getIniciais = (nome) => {
     if (!nome) return 'US'
     const partes = nome.trim().split(' ')
@@ -158,7 +278,6 @@ export default function Configuracoes() {
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
   }
 
-  // Filtro de busca de corretores
   const usuariosFiltrados = usuarios.filter((u) => {
     const termo = busca.toLowerCase()
     const nomeUser = (u.nome || '').toLowerCase()
@@ -277,15 +396,15 @@ export default function Configuracoes() {
               </button>
               <div className="flex items-center gap-3 ml-2 cursor-pointer">
                 <div className="text-right hidden md:block">
-                  <p className="text-sm font-bold text-on-surface">Admin Terra</p>
-                  <p className="text-xs text-on-surface-variant">Administrador</p>
+                  <p className="text-sm font-bold text-on-surface">
+                    {carregandoPerfil ? 'Carregando...' : perfil.nome || 'Usuário'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Corretor'}
+                  </p>
                 </div>
-                <div className="h-10 w-10 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30">
-                  <img
-                    alt="User Profile"
-                    className="w-full h-full object-cover"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhoef4fqgB-0WyVLHEoFmwZu7_TqLzLLFx6UBN8vLbPEdFb89RWGSL2_bpY31uGIOcH21vvJr_CM4D0drMxSrieFBwTzOS3tuSlnPwE4x_U5dcRZT1IiyEQvmT1JFvBJf4FbZGu4cn3fAMf4P6VbwUmJGrvu1Np5kpfcj9wdP3d3Tp5H1aNzEiWMFDEl423BYEHW2GOf8MNqWX9VKCQJ_BX1Q6YBss_KXNet7ln5J5cS3fUBLmWfe5hA8ocNzHA3R7Wg3rhQIqSr0"
-                  />
+                <div className="h-10 w-10 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 flex items-center justify-center font-bold text-sm text-primary">
+                  {getIniciais(perfil.nome)}
                 </div>
               </div>
             </div>
@@ -376,10 +495,14 @@ export default function Configuracoes() {
                           person
                         </span>
                         <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80"
+                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
                           readOnly
                           type="text"
-                          value="Eduardo Silva"
+                          value={
+                            carregandoPerfil
+                              ? 'Buscando...'
+                              : perfil.nome || 'Não informado'
+                          }
                         />
                       </div>
                     </div>
@@ -393,10 +516,14 @@ export default function Configuracoes() {
                           mail
                         </span>
                         <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80"
+                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
                           readOnly
                           type="text"
-                          value="eduardo.silva@terranova.com.br"
+                          value={
+                            carregandoPerfil
+                              ? 'Buscando...'
+                              : perfil.email || 'Não informado'
+                          }
                         />
                       </div>
                     </div>
@@ -410,10 +537,14 @@ export default function Configuracoes() {
                           call
                         </span>
                         <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80"
+                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-mono"
                           readOnly
                           type="text"
-                          value="5566999887766"
+                          value={
+                            carregandoPerfil
+                              ? 'Buscando...'
+                              : perfil.telefone || 'Não informado'
+                          }
                         />
                       </div>
                     </div>
@@ -437,10 +568,7 @@ export default function Configuracoes() {
                   </div>
 
                   <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      alert('Senha atualizada com sucesso!')
-                    }}
+                    onSubmit={handleAlterarSenha}
                     className="flex flex-col gap-5 max-w-md mt-2"
                   >
                     <div className="flex flex-col gap-1.5">
@@ -452,6 +580,7 @@ export default function Configuracoes() {
                           key
                         </span>
                         <input
+                          required
                           className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                           type="password"
                           placeholder="********"
@@ -470,6 +599,7 @@ export default function Configuracoes() {
                           password
                         </span>
                         <input
+                          required
                           className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline-variant"
                           placeholder="Mínimo 8 caracteres"
                           type="password"
@@ -488,6 +618,7 @@ export default function Configuracoes() {
                           password
                         </span>
                         <input
+                          required
                           className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline-variant"
                           placeholder="Repita a nova senha"
                           type="password"
@@ -499,12 +630,13 @@ export default function Configuracoes() {
 
                     <button
                       type="submit"
-                      className="mt-4 bg-primary text-on-primary hover:bg-primary/90 font-bold py-2.5 px-6 rounded-full flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 w-fit cursor-pointer"
+                      disabled={alterandoSenha}
+                      className="mt-4 bg-primary text-on-primary hover:bg-primary/90 disabled:opacity-50 font-bold py-2.5 px-6 rounded-full flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 w-fit cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[20px]">
                         update
                       </span>
-                      Atualizar Senha
+                      {alterandoSenha ? 'Atualizando...' : 'Atualizar Senha'}
                     </button>
                   </form>
                 </section>
@@ -640,7 +772,6 @@ export default function Configuracoes() {
                             {u.cargo || 'Corretor'}
                           </td>
                           <td className="py-4 px-6 text-right relative">
-                            {/* Botão de Engrenagem de Ações */}
                             <button
                               title="Opções de Ação"
                               onClick={() =>
@@ -653,7 +784,6 @@ export default function Configuracoes() {
                               </span>
                             </button>
 
-                            {/* Menu de Ações suspenso */}
                             {menuAbertoId === u.id && (
                               <div className="absolute right-6 top-12 z-30 bg-surface-bright border border-outline-variant/30 rounded-xl shadow-lg p-1.5 w-44 text-left font-body">
                                 <button
