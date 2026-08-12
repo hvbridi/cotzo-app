@@ -234,8 +234,15 @@ def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = De
     if not fazenda:
         raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
         
+    # 👇 Lista VIP atualizada com todos os campos novos
+    campos_permitidos = [
+        "nome", "capacidade_carregamento", "comprimento_balanca",
+        "telefone", "condicao_frete", "inscricao_estadual", 
+        "coordenadas", "municipio", "descricao_roteiro"
+    ]
+        
     for key, value in dados_atualizados.items():
-        if hasattr(fazenda, key) and key != "id":
+        if hasattr(fazenda, key) and key in campos_permitidos:
             setattr(fazenda, key, value)
             
     db.add(fazenda)

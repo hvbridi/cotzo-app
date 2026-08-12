@@ -34,16 +34,27 @@ class Fazenda(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nome: str
     
+    # 👇 NOVOS CAMPOS LOGÍSTICOS E CADASTRAIS
+    telefone: Optional[str] = None
+    condicao_frete: Optional[str] = Field(default=None, description="'FOB Fazenda' ou 'CIF Armazém'")
+    inscricao_estadual: Optional[str] = None
+    coordenadas: Optional[str] = Field(default=None, description="Ex: -15.793889, -47.882778")
+    municipio: Optional[str] = None
+    descricao_roteiro: Optional[str] = None
+    
+    # Campos que você já tinha colocado
+    capacidade_carregamento: Optional[int] = None # Ex: 50 (toneladas)
+    comprimento_balanca: Optional[float] = None
+    
     # Dependência de criação (A fazenda não existe sem um produtor)
     produtor_id: int = Field(foreign_key="produtor.id")
     produtor: Optional[Produtor] = Relationship(back_populates="fazendas")
-    capacidade_carregamento: Optional[int] = None # Ex: 50 (toneladas)
-    comprimento_balanca: Optional[float] = None
+    
     # Vínculos
     ofertas: List["Oferta"] = Relationship(back_populates="fazenda")
-    contratos: List["Contrato"] = Relationship(back_populates="fazenda_origem") # <- CORREÇÃO AQUI
+    contratos: List["Contrato"] = Relationship(back_populates="fazenda_origem")
 
-# ---------------------------------------------------------
+# --------------------------------------------------------
 # 2. OBJETO: OFERTA
 # ---------------------------------------------------------
 
