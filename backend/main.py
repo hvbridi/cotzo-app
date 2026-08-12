@@ -304,14 +304,63 @@ def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario
 # ==========================================
 @app.post("/contratos/", tags=["Contrato"])
 def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    # Cálculo de segurança: O Backend calcula sozinho pra evitar fraudes ou erros no React
+    # 1. Cálculo de segurança: O Backend calcula sozinho pra evitar fraudes
     contrato.valor_total = contrato.volume * contrato.preco_unitario
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
     
+    # 2. Salva o contrato no banco de dados primeiro
     db.add(contrato)
     db.commit()
     db.refresh(contrato)
-    return {"msg": "Contrato emitido com sucesso!", "dados": contrato}
+    
+    # 3. Busca os dados dos envolvidos para montar as mensagens
+    produtor = db.get(Produtor, contrato.produtor_id)
+    empresa = db.get(Empresa, contrato.empresa_id)
+    fazenda = db.get(Fazenda, contrato.fazenda_id)
+    
+    # Busca o corretor logado
+    if isinstance(usuario_logado, dict):
+        email_logado = usuario_logado.get("email") or usuario_logado.get("sub")
+    else:
+        email_logado = usuario_logado.email
+    corretor = db.exec(select(Usuario).where(Usuario.email == email_logado)).first()
+    
+    nome_corretor = corretor.nome if corretor else "Corretor"
+    telefone_corretor = corretor.telefone if corretor else ""
+
+    # 4. MENSAGEM PARA O PRODUTOR (Vendedor)
+    if produtor and produtor.whatsapp:
+        msg_produtor = (
+            f"🤝 *CONTRATO FECHADO COM SUCESSO!* 🤝\n\n"
+            f"Olá *{produtor.nome}*, seu negócio foi concluído!\n\n"
+            f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
+            f"📦 *Volume:* {contrato.volume:,.2f} {contrato.tipo_medida.lower()}\n"
+            f"💰 *Preço:* {contrato.moeda} {contrato.preco_unitario:,.2f} / {contrato.tipo_medida.lower()}\n"
+            f"🏢 *Comprador:* {empresa.razao_social}\n"
+            f"🚚 *Frete:* {contrato.tipo_frete}\n\n"
+            f"👨‍💼 *Corretor responsável:* {nome_corretor}\n"
+            f"Agradecemos a confiança e ótimos negócios!"
+        )
+        disparar_whatsapp_comprador(produtor.whatsapp, msg_produtor)
+
+    # 5. MENSAGEM PARA A EMPRESA (Comprador)
+    if empresa and empresa.telefone:
+        msg_empresa = (
+            f"📄 *NOVO FECHAMENTO DE CONTRATO* 📄\n\n"
+            f"Olá equipe *{empresa.razao_social}*, um novo negócio foi fechado:\n\n"
+            f"👤 *Produtor:* {produtor.nome}\n"
+            f"🚜 *Origem:* {fazenda.nome}\n"
+            f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
+            f"📦 *Volume:* {contrato.volume:,.2f} {contrato.tipo_medida.lower()}\n"
+            f"💰 *Preço Acordado:* {contrato.moeda} {contrato.preco_unitario:,.2f}\n"
+            f"🚚 *Modalidade:* {contrato.tipo_frete}\n\n"
+            f"👨‍💼 *Corretor:* {nome_corretor}\n"
+            f"📞 *Contato do Corretor:* {telefone_corretor}\n\n"
+            f"Em breve enviaremos a documentação oficial."
+        )
+        disparar_whatsapp_comprador(empresa.telefone, msg_empresa)
+        
+    return {"msg": "Contrato emitido e notificações enviadas com sucesso!", "dados": contrato}
 
 @app.get("/contratos/", tags=["Contrato"])
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
