@@ -51,6 +51,17 @@ def disparar_whatsapp_comprador(telefone: str, mensagem: str):
         print(f"Erro ao enviar WhatsApp: {e}")
         return False
 
+# ==========================================
+# 🛠️ FUNÇÃO AUXILIAR DE PERMISSÕES
+# ==========================================
+def obter_usuario_db(usuario_token, db: Session):
+    """Pega o objeto do usuário logado diretamente do banco"""
+    if isinstance(usuario_token, dict):
+        email = usuario_token.get("email") or usuario_token.get("sub")
+    else:
+        email = usuario_token.email
+    return db.exec(select(Usuario).where(Usuario.email == email)).first()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Iniciando banco de dados e conferindo tabelas...")
@@ -64,38 +75,26 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Libera o acesso para o frontend conversar com a API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", # Se o dev estiver testando no próprio PC
-        "http://localhost:5173", "https://cotzo-app.vercel.app"], # Em produção, você pode trocar "*" pelo link exato do seu site frontend
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "https://cotzo-app.vercel.app"], 
     allow_credentials=True,
-    allow_methods=["*"], # Permite GET, POST, PUT, DELETE...
+    allow_methods=["*"], 
     allow_headers=["*"],
 )
 
 # ==========================================
-# 🔐 ROTA DE LOGIN (Adaptada para o Swagger)
+# 🔐 LOGIN E USUÁRIOS
 # ==========================================
 @app.post("/login")
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
-    # 1. O Swagger manda os dados num pacote chamado "form_data". 
-    # O email vem escondido dentro de "form_data.username" e a senha em "form_data.password"
     usuario = db.exec(select(Usuario).where(Usuario.email == form_data.username)).first()
-    
-    # 2. Se não achar o usuário ou a senha não bater, bloqueia!
     if not usuario or not verificar_senha(form_data.password, usuario.senha_hash):
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
-    # 3. Se deu tudo certo, cria o crachá com o cargo real dele
     token = criar_token_acesso({"sub": usuario.email, "cargo": usuario.cargo})
     return {"access_token": token, "token_type": "bearer"}
-
-
-# ==========================================
-# 👤 A. USUÁRIOS (Corretores)
-# ==========================================
 
 class UsuarioUpdate(BaseModel):
     nome: Optional[str] = None
@@ -106,68 +105,47 @@ class UsuarioUpdate(BaseModel):
     comissao_padrao: Optional[float] = None
 
 @app.post("/usuarios/", tags=["Usuario"])
-def criar_usuario(
-    usuario: Usuario, 
-    db: Session = Depends(get_session), 
-    usuario_logado=Depends(usuario_atual) # 1. Adiciona o cadeado no Swagger!
-):
-    
-    # 2. A Fechadura: Verifica se quem está tentando criar a conta tem o cargo correto
-    if usuario_logado['cargo'] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso negado. Apenas administradores podem criar novos usuários."
-        )
-
-    # Criptografa a senha antes de salvar no banco! (NUNCA salvar a senha limpa)
+def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get('cargo') != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores criam usuários.")
     usuario.senha_hash = obter_hash_senha(usuario.senha_hash)
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
-    return {
-        "msg": "Usuário criado com sucesso!", 
-        "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})
-    }
+    return {"msg": "Usuário criado com sucesso!", "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})}
 
 @app.get("/usuarios/", tags=["Usuario"])
 def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    # Corretor não pode ver a lista de todos os usuários
+    if usuario_logado.get("cargo") == "corretor":
+        raise HTTPException(status_code=403, detail="Acesso negado.")
     usuarios = db.exec(select(Usuario)).all()
     return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
 @app.put("/usuarios/{usuario_id}", tags=["Usuario"])
 def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    if usuario_logado['cargo'] != "admin":
+    if usuario_logado.get('cargo') != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem editar usuários.")
         
     usuario = db.get(Usuario, usuario_id)
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if not usuario: raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
-    dados_filtrados = dados_atualizados.model_dump(exclude_unset=True)
-        
-    for key, value in dados_filtrados.items():
+    for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(usuario, key) and key != "id":
-            if key == "senha_hash": # Se estiver mudando a senha, criptografa de novo
-                value = obter_hash_senha(value)
+            if key == "senha_hash": value = obter_hash_senha(value)
             setattr(usuario, key, value)
             
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
-    return {
-        "msg": "Usuário atualizado!", 
-        "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})
-    }
+    return {"msg": "Usuário atualizado!", "dados": usuario.model_dump(exclude={"senha_hash"})}
 
 @app.delete("/usuarios/{usuario_id}", tags=["Usuario"])
 def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    if usuario_logado['cargo'] != "admin":
-        raise HTTPException(status_code=403, detail="Apenas administradores podem deletar usuários.")
-        
+    if usuario_logado.get('cargo') != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores excluem registros.")
     usuario = db.get(Usuario, usuario_id)
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
-        
+    if not usuario: raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     db.delete(usuario)
     db.commit()
     return {"msg": "Usuário deletado com sucesso."}
@@ -178,6 +156,11 @@ def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario
 # ==========================================
 @app.post("/produtores/", tags=["Produtor"])
 def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    # Atrela o produtor ao corretor que o criou, caso não tenha sido enviado
+    if not produtor.usuario_id:
+        produtor.usuario_id = usuario_db.id
+        
     db.add(produtor)
     db.commit()
     db.refresh(produtor)
@@ -185,14 +168,22 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
 
 @app.get("/produtores/", tags=["Produtor"])
 def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return db.exec(select(Produtor)).all()
+    if usuario_logado.get("cargo") in ["admin", "gerente"]:
+        return db.exec(select(Produtor)).all()
+    
+    # Se for corretor, vê apenas os clientes dele
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    return db.exec(select(Produtor).where(Produtor.usuario_id == usuario_db.id)).all()
 
 @app.put("/produtores/{produtor_id}", tags=["Produtor"])
 def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     produtor = db.get(Produtor, produtor_id)
-    if not produtor:
-        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    if not produtor: raise HTTPException(status_code=404, detail="Produtor não encontrado.")
         
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and produtor.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Você só pode editar seus próprios clientes.")
+
     for key, value in dados_atualizados.items():
         if hasattr(produtor, key) and key != "id":
             setattr(produtor, key, value)
@@ -204,9 +195,10 @@ def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = 
 
 @app.delete("/produtores/{produtor_id}", tags=["Produtor"])
 def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem excluir registros.")
     produtor = db.get(Produtor, produtor_id)
-    if not produtor:
-        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    if not produtor: raise HTTPException(status_code=404)
     db.delete(produtor)
     db.commit()
     return {"msg": "Produtor deletado com sucesso."}
@@ -217,12 +209,13 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
 # ==========================================
 @app.post("/fazendas/", tags=["Fazenda"])
 def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if not fazenda.usuario_id: fazenda.usuario_id = usuario_db.id
     db.add(fazenda)
     db.commit()
     db.refresh(fazenda)
     return {"msg": "Fazenda criada com sucesso!", "dados": fazenda}
 
-# A ROTA MÁGICA PRO SELECT DO SEU PAI: Traz as fazendas de 1 produtor específico
 @app.get("/produtores/{produtor_id}/fazendas", tags=["Fazenda"])
 def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     fazendas = db.exec(select(Fazenda).where(Fazenda.produtor_id == produtor_id)).all()
@@ -231,16 +224,13 @@ def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session
 @app.put("/fazendas/{fazenda_id}", tags=["Fazenda"])
 def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     fazenda = db.get(Fazenda, fazenda_id)
-    if not fazenda:
-        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+    if not fazenda: raise HTTPException(status_code=404)
+    
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and fazenda.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Permissão negada.")
         
-    # 👇 Lista VIP atualizada com todos os campos novos
-    campos_permitidos = [
-        "nome", "capacidade_carregamento", "comprimento_balanca",
-        "telefone", "condicao_frete", "inscricao_estadual", 
-        "coordenadas", "municipio", "descricao_roteiro"
-    ]
-        
+    campos_permitidos = ["nome", "capacidade_carregamento", "comprimento_balanca", "telefone", "condicao_frete", "inscricao_estadual", "coordenadas", "municipio", "descricao_roteiro"]
     for key, value in dados_atualizados.items():
         if hasattr(fazenda, key) and key in campos_permitidos:
             setattr(fazenda, key, value)
@@ -252,12 +242,11 @@ def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = De
 
 @app.delete("/fazendas/{fazenda_id}", tags=["Fazenda"])
 def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     fazenda = db.get(Fazenda, fazenda_id)
-    if not fazenda:
-        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
     db.delete(fazenda)
     db.commit()
-    return {"msg": "Fazenda deletada com sucesso."}
+    return {"msg": "Fazenda deletada."}
 
 
 # ==========================================
@@ -265,6 +254,8 @@ def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario
 # ==========================================
 @app.post("/empresas/", tags=["Empresa"])
 def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if not empresa.usuario_id: empresa.usuario_id = usuario_db.id
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
@@ -272,13 +263,20 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
 
 @app.get("/empresas/", tags=["Empresa"])
 def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return db.exec(select(Empresa)).all()
+    if usuario_logado.get("cargo") in ["admin", "gerente"]:
+        return db.exec(select(Empresa)).all()
+        
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    return db.exec(select(Empresa).where(Empresa.usuario_id == usuario_db.id)).all()
 
 @app.put("/empresas/{empresa_id}", tags=["Empresa"])
 def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     empresa = db.get(Empresa, empresa_id)
-    if not empresa:
-        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    if not empresa: raise HTTPException(status_code=404)
+    
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and empresa.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Você só pode editar suas próprias empresas cadastradas.")
         
     for key, value in dados_atualizados.items():
         if hasattr(empresa, key) and key != "id":
@@ -291,12 +289,11 @@ def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = De
 
 @app.delete("/empresas/{empresa_id}", tags=["Empresa"])
 def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     empresa = db.get(Empresa, empresa_id)
-    if not empresa:
-        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     db.delete(empresa)
     db.commit()
-    return {"msg": "Empresa deletada com sucesso."}
+    return {"msg": "Empresa deletada."}
 
 
 # ==========================================
@@ -304,31 +301,27 @@ def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario
 # ==========================================
 @app.post("/contratos/", tags=["Contrato"])
 def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    # 1. Cálculo de segurança: O Backend calcula sozinho pra evitar fraudes
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    
+    # O dono do contrato é sempre quem está logado, a menos que o admin passe outro ID
+    if usuario_logado.get("cargo") == "corretor" or not contrato.usuario_id:
+        contrato.usuario_id = usuario_db.id
+
     contrato.valor_total = contrato.volume * contrato.preco_unitario
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
     
-    # 2. Salva o contrato no banco de dados primeiro
     db.add(contrato)
     db.commit()
     db.refresh(contrato)
     
-    # 3. Busca os dados dos envolvidos para montar as mensagens
+    # ================= DISPAROS DO WHATSAPP =================
     produtor = db.get(Produtor, contrato.produtor_id)
     empresa = db.get(Empresa, contrato.empresa_id)
     fazenda = db.get(Fazenda, contrato.fazenda_id)
     
-    # Busca o corretor logado
-    if isinstance(usuario_logado, dict):
-        email_logado = usuario_logado.get("email") or usuario_logado.get("sub")
-    else:
-        email_logado = usuario_logado.email
-    corretor = db.exec(select(Usuario).where(Usuario.email == email_logado)).first()
-    
-    nome_corretor = corretor.nome if corretor else "Corretor"
-    telefone_corretor = corretor.telefone if corretor else ""
+    nome_corretor = usuario_db.nome if usuario_db else "Corretor"
+    telefone_corretor = usuario_db.telefone if usuario_db else ""
 
-    # 4. MENSAGEM PARA O PRODUTOR (Vendedor)
     if produtor and produtor.whatsapp:
         msg_produtor = (
             f"🤝 *CONTRATO FECHADO COM SUCESSO!* 🤝\n\n"
@@ -343,7 +336,6 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
         )
         disparar_whatsapp_comprador(produtor.whatsapp, msg_produtor)
 
-    # 5. MENSAGEM PARA A EMPRESA (Comprador)
     if empresa and empresa.telefone:
         msg_empresa = (
             f"📄 *NOVO FECHAMENTO DE CONTRATO* 📄\n\n"
@@ -364,27 +356,26 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
 
 @app.get("/contratos/", tags=["Contrato"])
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return db.exec(select(Contrato)).all()
+    if usuario_logado.get("cargo") in ["admin", "gerente"]:
+        return db.exec(select(Contrato)).all()
+        
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    return db.exec(select(Contrato).where(Contrato.usuario_id == usuario_db.id)).all()
 
 @app.put("/contratos/{contrato_id}", tags=["Contrato"])
 def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     contrato = db.get(Contrato, contrato_id)
-    if not contrato:
-        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
-
-    campos_permitidos = [
-        "data_fechamento", "commodity", "safra", "volume", 
-        "tipo_medida", "moeda", "preco_unitario", "tipo_frete", 
-        "data_entrega", "data_pagamento", "numero_contrato_trading", 
-        "comissao_porcentagem", "status", "observacoes",
-        "produtor_id", "fazenda_id", "empresa_id"
-    ]
+    if not contrato: raise HTTPException(status_code=404)
     
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and contrato.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Você só pode editar seus próprios contratos.")
+
+    campos_permitidos = ["data_fechamento", "commodity", "safra", "volume", "tipo_medida", "moeda", "preco_unitario", "tipo_frete", "data_entrega", "data_pagamento", "numero_contrato_trading", "comissao_porcentagem", "status", "observacoes", "produtor_id", "fazenda_id", "empresa_id"]
     for key, value in dados_atualizados.items():
         if hasattr(contrato, key) and key in campos_permitidos:
             setattr(contrato, key, value)
             
-    # Recalcula automaticamente a parte financeira após as alterações
     contrato.valor_total = contrato.volume * contrato.preco_unitario
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
             
@@ -395,52 +386,16 @@ def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = 
 
 @app.delete("/contratos/{contrato_id}", tags=["Contrato"])
 def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     contrato = db.get(Contrato, contrato_id)
-    if not contrato:
-        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
     db.delete(contrato)
     db.commit()
-    return {"msg": "Contrato deletado com sucesso."}
+    return {"msg": "Contrato deletado."}
 
 
-@app.get("/exportar-excel/")
-def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    # 1. Pega tudo do banco de dados
-    usuarios = db.exec(select(Usuario)).all()
-    produtores = db.exec(select(Produtor)).all()
-    fazendas = db.exec(select(Fazenda)).all()
-    empresas = db.exec(select(Empresa)).all()
-    contratos = db.exec(select(Contrato)).all()
-
-    # 2. Converte para o formato de Tabela
-    df_usuarios = pd.DataFrame([u.model_dump() for u in usuarios])
-    df_produtores = pd.DataFrame([p.model_dump() for p in produtores])
-    df_fazendas = pd.DataFrame([f.model_dump() for f in fazendas])
-    df_empresas = pd.DataFrame([e.model_dump() for e in empresas])
-    df_contratos = pd.DataFrame([c.model_dump() for c in contratos])
-
-    # Segurança: NUNCA exporte as senhas!
-    if not df_usuarios.empty and 'senha_hash' in df_usuarios.columns:
-        df_usuarios = df_usuarios.drop(columns=['senha_hash'])
-
-    # 3. Prepara o arquivo Excel na memória do servidor
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_contratos.to_excel(writer, sheet_name='Contratos', index=False)
-        df_produtores.to_excel(writer, sheet_name='Produtores', index=False)
-        df_fazendas.to_excel(writer, sheet_name='Fazendas', index=False)
-        df_empresas.to_excel(writer, sheet_name='Empresas', index=False)
-        df_usuarios.to_excel(writer, sheet_name='Usuários', index=False)
-
-    # 4. Finaliza e envia o arquivo para download
-    output.seek(0)
-    return StreamingResponse(
-        output, 
-        headers={'Content-Disposition': 'attachment; filename="banco_de_dados_corretora.xlsx"'}, 
-        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-
-# Modelo temporário para receber os dados do front-end/Swagger incluindo os compradores
+# ==========================================
+# 📊 OFERTAS E COMPRADORES
+# ==========================================
 class OfertaCreate(BaseModel):
     produtor_id: int
     fazenda_id: int
@@ -449,41 +404,20 @@ class OfertaCreate(BaseModel):
     tipo_medida: str = "Sacas"
     preco: float
     moeda: str = "BRL"
-    data_entrega_embarque: date # ou date
-    compradores_ids: List[int] = [] # <--- Aqui você seleciona quais IDs de compradores vão receber
+    data_entrega_embarque: date
+    compradores_ids: List[int] = []
 
 @app.post("/ofertas/", response_model=Oferta, tags=["Oferta"])
 def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    """
-    Cria uma nova oferta, valida a fazenda e envia o WhatsApp automaticamente 
-    para os compradores selecionados, incluindo o contato do corretor logado.
-    """
-    # 1. Valida se a fazenda existe
     fazenda_db = session.get(Fazenda, dados.fazenda_id)
-    if not fazenda_db:
-        raise HTTPException(status_code=404, detail="Fazenda não encontrada no sistema.")
+    if not fazenda_db: raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+    if fazenda_db.produtor_id != dados.produtor_id: raise HTTPException(status_code=403)
         
-    # 2. Trava de segurança: A fazenda pertence ao produtor?
-    if fazenda_db.produtor_id != dados.produtor_id:
-        raise HTTPException(
-            status_code=403, 
-            detail="Operação bloqueada: Esta fazenda não pertence ao produtor informado."
-        )
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    if not usuario_db or not usuario_db.telefone: raise HTTPException(status_code=400, detail="Corretor sem telefone.")
         
-    # 3. Busca os dados completos do corretor logado no banco de dados
-    # Descobre o e-mail dependendo de como o seu auth.py foi programado
-    if isinstance(usuario_logado, dict):
-        email_logado = usuario_logado.get("email") or usuario_logado.get("sub")
-    else:
-        email_logado = usuario_logado.email
-        
-    corretor = session.exec(select(Usuario).where(Usuario.email == email_logado)).first()
-    
-    if not corretor or not corretor.telefone:
-         raise HTTPException(status_code=400, detail="Seu usuário precisa ter um telefone cadastrado para enviar ofertas.")
-        
-    # 4. Cria o objeto Oferta para salvar no banco
     nova_oferta = Oferta(
+        usuario_id=usuario_db.id, # <--- DONO DA OFERTA
         produtor_id=dados.produtor_id,
         fazenda_id=dados.fazenda_id,
         commodity=dados.commodity,
@@ -498,12 +432,9 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     session.commit()
     session.refresh(nova_oferta)
     
-    # 5. DISPARO AUTOMÁTICO PARA OS COMPRADORES SELECIONADOS
     if dados.compradores_ids:
         produtor_nome = fazenda_db.produtor.nome
         fazenda_nome = fazenda_db.nome
-        
-        # Monta o texto do WhatsApp incluindo os dados do corretor
         texto_mensagem = (
             f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
             f"🌱 *Produto:* {dados.commodity}\n"
@@ -512,12 +443,11 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
             f"📦 *Volume:* {dados.volume:,} {dados.tipo_medida.lower()}\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
             f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
-            f"👨‍💼 *Corretor:* {corretor.nome}\n"
-            f"📞 *WhatsApp:* {corretor.telefone}\n\n"
+            f"👨‍💼 *Corretor:* {usuario_db.nome}\n"
+            f"📞 *WhatsApp:* {usuario_db.telefone}\n\n"
             f"Responda esta mensagem ou clique no número acima para negociar!"
         )
         
-        # Busca cada comprador no banco pelo ID enviado na lista
         for comprador_id in dados.compradores_ids:
             comprador = session.get(Comprador, comprador_id)
             if comprador and comprador.telefone:
@@ -526,20 +456,23 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     return nova_oferta
 
 @app.get("/ofertas/", response_model=list[Oferta], tags=["Oferta"])
-def listar_ofertas(session: Session = Depends(get_session)):
-    """
-    Lista todas as ofertas ativas no sistema.
-    """
-    ofertas = session.exec(select(Oferta)).all()
-    return ofertas
+def listar_ofertas(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") in ["admin", "gerente"]:
+        return session.exec(select(Oferta)).all()
+        
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    return session.exec(select(Oferta).where(Oferta.usuario_id == usuario_db.id)).all()
 
 @app.put("/ofertas/{oferta_id}", tags=["Oferta"])
 def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     oferta = db.get(Oferta, oferta_id)
-    if not oferta:
-        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
-    campos_permitidos = ["commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
+    if not oferta: raise HTTPException(status_code=404)
     
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and oferta.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Permissão negada.")
+        
+    campos_permitidos = ["commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
     for key, value in dados_atualizados.items():
         if hasattr(oferta, key) and key in campos_permitidos:
             setattr(oferta, key, value)
@@ -551,59 +484,49 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
 
 @app.delete("/ofertas/{oferta_id}", tags=["Oferta"])
 def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     oferta = db.get(Oferta, oferta_id)
-    if not oferta:
-        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
     db.delete(oferta)
     db.commit()
-    return {"msg": "Oferta deletada com sucesso."}
+    return {"msg": "Oferta deletada."}
 
-@app.post("/compradores/", response_model=Comprador, tags=["Comprador"])
-def criar_comprador(comprador: Comprador, session: Session = Depends(get_session)):
-    """
-    Cadastra um novo comprador vinculado a uma empresa (Trading).
-    """
-    # Validação opcional: verificar se a empresa realmente existe
-    empresa_db = session.get(Empresa, comprador.empresa_id)
-    if not empresa_db:
-        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada.")
+
+# ==========================================
+# 📄 EXPORTAÇÃO E EXTRA (Apenas Gerência)
+# ==========================================
+@app.get("/exportar-excel/")
+def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    # Trava GIGANTE de segurança: Corretor não pode baixar o banco de dados inteiro da empresa
+    if usuario_logado.get("cargo") == "corretor":
+        raise HTTPException(status_code=403, detail="Apenas administradores e gerentes podem exportar a base de dados.")
         
-    session.add(comprador)
-    session.commit()
-    session.refresh(comprador)
-    return comprador
+    usuarios = db.exec(select(Usuario)).all()
+    produtores = db.exec(select(Produtor)).all()
+    fazendas = db.exec(select(Fazenda)).all()
+    empresas = db.exec(select(Empresa)).all()
+    contratos = db.exec(select(Contrato)).all()
 
-@app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
-def listar_compradores(session: Session = Depends(get_session)):
-    """
-    Lista todos os compradores cadastrados.
-    """
-    compradores = session.exec(select(Comprador)).all()
-    return compradores
+    df_usuarios = pd.DataFrame([u.model_dump() for u in usuarios])
+    df_produtores = pd.DataFrame([p.model_dump() for p in produtores])
+    df_fazendas = pd.DataFrame([f.model_dump() for f in fazendas])
+    df_empresas = pd.DataFrame([e.model_dump() for e in empresas])
+    df_contratos = pd.DataFrame([c.model_dump() for c in contratos])
 
-@app.put("/compradores/{comprador_id}", tags=["Comprador"])
-def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    comprador = db.get(Comprador, comprador_id)
-    if not comprador:
-        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
-        
-    for key, value in dados_atualizados.items():
-        if hasattr(comprador, key) and key != "id":
-            setattr(comprador, key, value)
-            
-    db.add(comprador)
-    db.commit()
-    db.refresh(comprador)
-    return comprador
+    if not df_usuarios.empty and 'senha_hash' in df_usuarios.columns:
+        df_usuarios = df_usuarios.drop(columns=['senha_hash'])
 
-@app.delete("/compradores/{comprador_id}", tags=["Comprador"])
-def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    comprador = db.get(Comprador, comprador_id)
-    if not comprador:
-        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
-    db.delete(comprador)
-    db.commit()
-    return {"msg": "Comprador deletado com sucesso."}
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_contratos.to_excel(writer, sheet_name='Contratos', index=False)
+        df_produtores.to_excel(writer, sheet_name='Produtores', index=False)
+        df_fazendas.to_excel(writer, sheet_name='Fazendas', index=False)
+        df_empresas.to_excel(writer, sheet_name='Empresas', index=False)
+        df_usuarios.to_excel(writer, sheet_name='Usuários', index=False)
+
+    output.seek(0)
+    return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="banco_de_dados_corretora.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+# Rotas de esqueci-senha e QR Code continuam iguais, adicione elas no fim do arquivo...
 
 @app.post("/esqueci-senha", tags=["Senha"])
 @limiter.limit("3/minute")

@@ -20,6 +20,7 @@ class Usuario(SQLModel, table=True):
 
 class Produtor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     nome: str
     whatsapp: str
     cpf_cnpj: Optional[str] = None 
@@ -32,6 +33,7 @@ class Produtor(SQLModel, table=True):
 
 class Fazenda(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     nome: str
     
     # 👇 NOVOS CAMPOS LOGÍSTICOS E CADASTRAIS
@@ -80,6 +82,7 @@ class Oferta(SQLModel, table=True):
 # 4. Tabela de Empresas Compradoras (Tradings)
 class Empresa(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     razao_social: str
     cnpj: str = Field(unique=True, index=True)
     inscricao_estadual: Optional[str] = None
@@ -93,6 +96,7 @@ class Empresa(SQLModel, table=True):
 
 class Comprador(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     nome: str
     email: str = Field(unique=True, index=True)
     telefone: str
@@ -104,6 +108,7 @@ class Comprador(SQLModel, table=True):
 # 5. O Coração do Sistema: Contratos de Fechamento
 class Contrato(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     data_fechamento: date
     commodity: str # "Soja" ou "Milho"
     safra: str # Ex: "2025/2026"
