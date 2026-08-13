@@ -490,43 +490,161 @@ def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_l
     db.commit()
     return {"msg": "Oferta deletada."}
 
+# ==========================================
+# 🛒 F. COMPRADORES
+# ==========================================
+@app.post("/compradores/", response_model=Comprador, tags=["Comprador"])
+def criar_comprador(comprador: Comprador, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    
+    # Atrela o comprador ao corretor que o criou
+    if not comprador.usuario_id: 
+        comprador.usuario_id = usuario_db.id
+        
+    empresa_db = session.get(Empresa, comprador.empresa_id)
+    if not empresa_db: 
+        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada.")
+        
+    session.add(comprador)
+    session.commit()
+    session.refresh(comprador)
+    return comprador
+
+@app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
+def listar_compradores(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    # Gerente e Admin veem todos os contatos
+    if usuario_logado.get("cargo") in ["admin", "gerente"]:
+        return session.exec(select(Comprador)).all()
+        
+    # Corretor vê apenas os contatos que ele mesmo cadastrou
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    return session.exec(select(Comprador).where(Comprador.usuario_id == usuario_db.id)).all()
+
+@app.put("/compradores/{comprador_id}", tags=["Comprador"])
+def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    comprador = db.get(Comprador, comprador_id)
+    if not comprador: 
+        raise HTTPException(status_code=404)
+    
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    # Bloqueia se o corretor tentar editar um comprador que não é dele
+    if usuario_logado.get("cargo") == "corretor" and comprador.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Permissão negada. Você só pode editar seus próprios compradores.")
+        
+    for key, value in dados_atualizados.items():
+        if hasattr(comprador, key) and key != "id":
+            setattr(comprador, key, value)
+            
+    db.add(comprador)
+    db.commit()
+    db.refresh(comprador)
+    return comprador
+
+@app.delete("/compradores/{comprador_id}", tags=["Comprador"])
+def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    # Apenas Admin pode deletar
+    if usuario_logado.get("cargo") != "admin": 
+        raise HTTPException(status_code=403)
+        
+    comprador = db.get(Comprador, comprador_id)
+    db.delete(comprador)
+    db.commit()
+    return {"msg": "Comprador deletado com sucesso."}
+
 
 # ==========================================
 # 📄 EXPORTAÇÃO E EXTRA (Apenas Gerência)
 # ==========================================
-@app.get("/exportar-excel/")
-def exportar_dados_para_excel(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    # Trava GIGANTE de segurança: Corretor não pode baixar o banco de dados inteiro da empresa
-    if usuario_logado.get("cargo") == "corretor":
-        raise HTTPException(status_code=403, detail="Apenas administradores e gerentes podem exportar a base de dados.")
+@app.get("/exportar-excel/", tags=["Exportacao"])
+def exportar_dados_para_excel(
+    tabelas: Optional[str] = None, # Opcional: ex: "fazendas,empresas"
+    db: Session = Depends(get_session), 
+    usuario_logado=Depends(usuario_atual)
+):
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    cargo = usuario_logado.get("cargo")
+    
+    # 1. Define quais tabelas o usuário quer exportar
+    # Se ele mandar "?tabelas=fazendas,contratos", o sistema separa numa lista.
+    if tabelas:
+        tabelas_solicitadas = [t.strip().lower() for t in tabelas.split(",")]
+    else:
+        # Se não especificar nada, exporta todas as abas que ele tem direito
+        tabelas_solicitadas = ["usuarios", "produtores", "fazendas", "empresas", "contratos", "ofertas"]
         
-    usuarios = db.exec(select(Usuario)).all()
-    produtores = db.exec(select(Produtor)).all()
-    fazendas = db.exec(select(Fazenda)).all()
-    empresas = db.exec(select(Empresa)).all()
-    contratos = db.exec(select(Contrato)).all()
-
-    df_usuarios = pd.DataFrame([u.model_dump() for u in usuarios])
-    df_produtores = pd.DataFrame([p.model_dump() for p in produtores])
-    df_fazendas = pd.DataFrame([f.model_dump() for f in fazendas])
-    df_empresas = pd.DataFrame([e.model_dump() for e in empresas])
-    df_contratos = pd.DataFrame([c.model_dump() for c in contratos])
-
-    if not df_usuarios.empty and 'senha_hash' in df_usuarios.columns:
-        df_usuarios = df_usuarios.drop(columns=['senha_hash'])
-
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_contratos.to_excel(writer, sheet_name='Contratos', index=False)
-        df_produtores.to_excel(writer, sheet_name='Produtores', index=False)
-        df_fazendas.to_excel(writer, sheet_name='Fazendas', index=False)
-        df_empresas.to_excel(writer, sheet_name='Empresas', index=False)
-        df_usuarios.to_excel(writer, sheet_name='Usuários', index=False)
+        sheets_escritas = 0
+        
+        # 👤 USUÁRIOS (Corretor nunca pode exportar a lista de usuários da empresa)
+        if "usuarios" in tabelas_solicitadas and cargo in ["admin", "gerente"]:
+            usuarios = db.exec(select(Usuario)).all()
+            df = pd.DataFrame([u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Usuarios', index=False)
+                sheets_escritas += 1
+
+        # 📄 CONTRATOS
+        if "contratos" in tabelas_solicitadas:
+            query = select(Contrato)
+            if cargo == "corretor": query = query.where(Contrato.usuario_id == usuario_db.id)
+            contratos = db.exec(query).all()
+            df = pd.DataFrame([c.model_dump() for c in contratos])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Contratos', index=False)
+                sheets_escritas += 1
+
+        # 🌾 PRODUTORES
+        if "produtores" in tabelas_solicitadas:
+            query = select(Produtor)
+            if cargo == "corretor": query = query.where(Produtor.usuario_id == usuario_db.id)
+            produtores = db.exec(query).all()
+            df = pd.DataFrame([p.model_dump() for p in produtores])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Produtores', index=False)
+                sheets_escritas += 1
+
+        # 🚜 FAZENDAS
+        if "fazendas" in tabelas_solicitadas:
+            query = select(Fazenda)
+            if cargo == "corretor": query = query.where(Fazenda.usuario_id == usuario_db.id)
+            fazendas = db.exec(query).all()
+            df = pd.DataFrame([f.model_dump() for f in fazendas])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Fazendas', index=False)
+                sheets_escritas += 1
+
+        # 🏢 EMPRESAS
+        if "empresas" in tabelas_solicitadas:
+            query = select(Empresa)
+            if cargo == "corretor": query = query.where(Empresa.usuario_id == usuario_db.id)
+            empresas = db.exec(query).all()
+            df = pd.DataFrame([e.model_dump() for e in empresas])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Empresas', index=False)
+                sheets_escritas += 1
+                
+        # 📊 OFERTAS
+        if "ofertas" in tabelas_solicitadas:
+            query = select(Oferta)
+            if cargo == "corretor": query = query.where(Oferta.usuario_id == usuario_db.id)
+            ofertas = db.exec(query).all()
+            df = pd.DataFrame([o.model_dump() for o in ofertas])
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Ofertas', index=False)
+                sheets_escritas += 1
+
+        # Segurança: Se a pessoa pedir uma tabela vazia (ou tentar fraudar), retorna um aviso
+        if sheets_escritas == 0:
+            pd.DataFrame([{"Aviso": "Nenhum dado encontrado ou sem permissão para exportar."}]).to_excel(writer, sheet_name='Sem Dados', index=False)
 
     output.seek(0)
-    return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="banco_de_dados_corretora.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return StreamingResponse(
+        output, 
+        headers={'Content-Disposition': 'attachment; filename="relatorio_corretora.xlsx"'}, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
-# Rotas de esqueci-senha e QR Code continuam iguais, adicione elas no fim do arquivo...
 
 @app.post("/esqueci-senha", tags=["Senha"])
 @limiter.limit("3/minute")
