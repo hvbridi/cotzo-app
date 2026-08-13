@@ -108,6 +108,8 @@ class UsuarioUpdate(BaseModel):
 def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != "admin":
         raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores criam usuários.")
+    if usuario.cargo not in ["corretor", "gerente", "admin"]:
+        raise HTTPException(status_code=400, detail="Cargo inválido. Digite apenas: corretor, gerente ou admin.")
     usuario.senha_hash = obter_hash_senha(usuario.senha_hash)
     db.add(usuario)
     db.commit()
@@ -126,7 +128,8 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
 def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem editar usuários.")
-        
+    if dados_atualizados.cargo and dados_atualizados.cargo not in ["corretor", "gerente", "admin"]:
+        raise HTTPException(status_code=400, detail="Cargo inválido. Digite apenas: corretor, gerente ou admin.")
     usuario = db.get(Usuario, usuario_id)
     if not usuario: raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
