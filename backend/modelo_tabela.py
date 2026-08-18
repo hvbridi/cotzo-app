@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # 1. Tabela de Usuários (Corretores e Admins)
 class Usuario(SQLModel, table=True):
@@ -146,4 +147,4 @@ class Historico(SQLModel, table=True):
     id_afetado: int
     acao: str
     detalhes: Optional[str] = None
-    horario: datetime = Field(default_factory=datetime.utcnow)
+    horario: datetime = Field(default_factory=datetime.now(ZoneInfo("America/Sao_Paulo")))

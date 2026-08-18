@@ -198,6 +198,10 @@ def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = 
     db.add(produtor)
     db.commit()
     db.refresh(produtor)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Alterar',
+                                detalhes=f'O produtor {produtor.nome} foi alterado')
+    db.add(log)
+    db.commit()
     return produtor
 
 @app.delete("/produtores/{produtor_id}", tags=["Produtor"])
@@ -253,6 +257,10 @@ def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = De
     db.add(fazenda)
     db.commit()
     db.refresh(fazenda)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Alterar',
+                        detalhes=f'A fazenda {fazenda.nome} foi alterada')
+    db.add(log)
+    db.commit()
     return fazenda
 
 @app.delete("/fazendas/{fazenda_id}", tags=["Fazenda"])
@@ -308,6 +316,10 @@ def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = De
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Alterar',
+                            detalhes=f'A empresa {empresa.razao_social} foi alterada')
+    db.add(log)
+    db.commit()
     return empresa
 
 @app.delete("/empresas/{empresa_id}", tags=["Empresa"])
@@ -413,6 +425,10 @@ def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = 
     db.add(contrato)
     db.commit()
     db.refresh(contrato)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Alterar',
+                            detalhes=f'O contrato de id {contrato.id} foi alterado')
+    db.add(log)
+    db.commit()
     return contrato
 
 @app.delete("/contratos/{contrato_id}", tags=["Contrato"])
@@ -520,6 +536,10 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
     db.add(oferta)
     db.commit()
     db.refresh(oferta)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Alterar',
+                                detalhes=f'A oferta de id {oferta.id} foi alterada')
+    db.add(log)
+    db.commit()
     return oferta
 
 @app.delete("/ofertas/{oferta_id}", tags=["Oferta"])
@@ -586,6 +606,10 @@ def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session 
     db.add(comprador)
     db.commit()
     db.refresh(comprador)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Alterar',
+                                detalhes=f'O comprador {comprador.nome} foi alterado')
+    db.add(log)
+    db.commit()
     return comprador
 
 @app.delete("/compradores/{comprador_id}", tags=["Comprador"])
