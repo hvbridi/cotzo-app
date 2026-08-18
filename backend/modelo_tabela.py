@@ -138,3 +138,12 @@ class Contrato(SQLModel, table=True):
     
     empresa_id: int = Field(foreign_key="empresa.id")
     empresa_compradora: Optional[Empresa] = Relationship(back_populates="contratos")
+
+class Historico(SQLModel, table=True):
+    id: Optional[int] = Field(primary_key=True, default=None)
+    usuario_id: int = Field(foreign_key='usuario.id')
+    tabela_afetada: str
+    id_afetado: int
+    acao: str
+    detalhes: Optional[str] = None
+    horario: datetime = Field(default_factory=datetime.utcnow)
