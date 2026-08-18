@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 import secrets
 from fastapi.responses import HTMLResponse
 # Nossas tabelas
-from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador
+from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador, Historico
 # Nossas funções de segurança
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
@@ -167,6 +167,8 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
     db.add(produtor)
     db.commit()
     db.refresh(produtor)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Adicionar',
+                            detalhes=f'O produtor {produtor.nome} foi adicionado')
     return {"msg": "Produtor criado com sucesso!", "dados": produtor}
 
 @app.get("/produtores/", tags=["Produtor"])
@@ -202,7 +204,10 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
         raise HTTPException(status_code=403, detail="Apenas administradores podem excluir registros.")
     produtor = db.get(Produtor, produtor_id)
     if not produtor: raise HTTPException(status_code=404)
+    usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(produtor)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Deletar',
+                                detalhes=f'O produtor {produtor.nome} foi deletado')
     db.commit()
     return {"msg": "Produtor deletado com sucesso."}
 
@@ -217,6 +222,10 @@ def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_
     db.add(fazenda)
     db.commit()
     db.refresh(fazenda)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Adicionar',
+                    detalhes=f'A fazenda {fazenda.nome} foi adicionada')
+    db.add(log)
+    db.commit()
     return {"msg": "Fazenda criada com sucesso!", "dados": fazenda}
 
 @app.get("/produtores/{produtor_id}/fazendas", tags=["Fazenda"])
@@ -247,7 +256,11 @@ def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = De
 def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     fazenda = db.get(Fazenda, fazenda_id)
+    usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(fazenda)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Deletar',
+                        detalhes=f'A fazenda {fazenda.nome} foi deletada')
+    db.add(log)
     db.commit()
     return {"msg": "Fazenda deletada."}
 
@@ -262,6 +275,10 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Adicionar',
+                        detalhes=f'A empresa {empresa.nome} foi adicionada')
+    db.add(log)
+    db.commit()
     return {"msg": "Empresa criada com sucesso!", "dados": empresa}
 
 @app.get("/empresas/", tags=["Empresa"])
@@ -294,7 +311,11 @@ def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = De
 def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     empresa = db.get(Empresa, empresa_id)
+    usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(empresa)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Deletar',
+                        detalhes=f'A empresa {empresa.nome} foi deletada')
+    db.add(log)
     db.commit()
     return {"msg": "Empresa deletada."}
 
@@ -316,6 +337,10 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
     db.add(contrato)
     db.commit()
     db.refresh(contrato)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Adicionar',
+                        detalhes=f'O contrato de id {contrato.id} foi adicionado')
+    db.add(log)
+    db.commit()
     
     # ================= DISPAROS DO WHATSAPP =================
     produtor = db.get(Produtor, contrato.produtor_id)
@@ -391,7 +416,11 @@ def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = 
 def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     contrato = db.get(Contrato, contrato_id)
+    usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(contrato)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Deletar',
+                        detalhes=f'O contrato de id {contrato.id} foi deletado')
+    db.add(log)
     db.commit()
     return {"msg": "Contrato deletado."}
 
@@ -434,6 +463,9 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     session.add(nova_oferta)
     session.commit()
     session.refresh(nova_oferta)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=nova_oferta.id,acao='Adicionar',
+                            detalhes=f'A oferta de id {nova_oferta.id} foi adicionado')
+
     
     if dados.compradores_ids:
         produtor_nome = fazenda_db.produtor.nome
@@ -489,6 +521,9 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
 def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     oferta = db.get(Oferta, oferta_id)
+    usuario_db = obter_usuario_db(usuario_logado,db)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Deletar',
+                            detalhes=f'A oferta de id {oferta.id} foi deletada')
     db.delete(oferta)
     db.commit()
     return {"msg": "Oferta deletada."}
@@ -511,6 +546,8 @@ def criar_comprador(comprador: Comprador, session: Session = Depends(get_session
     session.add(comprador)
     session.commit()
     session.refresh(comprador)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Adicionar',
+                            detalhes=f'{comprador.nome} foi adicionado como comprador')
     return comprador
 
 @app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
@@ -548,8 +585,10 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
     # Apenas Admin pode deletar
     if usuario_logado.get("cargo") != "admin": 
         raise HTTPException(status_code=403)
-        
+    usuario_db=obter_usuario_db(usuario_logado,db)
     comprador = db.get(Comprador, comprador_id)
+    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Deletar',
+                            detalhes=f'O comprador {comprador.nome} foi deletado')
     db.delete(comprador)
     db.commit()
     return {"msg": "Comprador deletado com sucesso."}
@@ -758,3 +797,9 @@ def conectar_whatsapp():
             
     except Exception as e:
         return HTMLResponse(content=f"<h3>Erro ao conectar com a Evolution API:</h3> <p>{str(e)}</p>")
+
+@app.get('/historicos/',tags=['Historico'])
+def pegar_historico(db=Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get('cargo') != 'admin':
+        raise HTTPException(status_code=403, detail="Cargo sem permissão")
+    return db.exec(select(Historico).order_by(Historico.id.desc())).all()
