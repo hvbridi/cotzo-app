@@ -811,4 +811,21 @@ def conectar_whatsapp():
 def pegar_historico(db=Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != 'admin':
         raise HTTPException(status_code=403, detail="Cargo sem permissão")
-    return db.exec(select(Historico).order_by(Historico.id.desc())).all()
+    resultados = db.exec(
+        select(Historico, Usuario.nome)
+        .join(Usuario, Historico.usuario_id == Usuario.id)
+        .order_by(Historico.id.desc())).all()
+    lista_final = []
+    
+    for historico, nome in resultados:
+        # Transforma o objeto do histórico em um dicionário
+        item = historico.model_dump()
+        
+        # Cria uma gaveta nova no dicionário e coloca o nome lá dentro
+        item["usuario_nome"] = nome
+        
+        # Adiciona esse dicionário pronto na nossa lista final
+        lista_final.append(item)
+        
+    # 3. Devolve a lista pronta para o frontend
+    return lista_final
