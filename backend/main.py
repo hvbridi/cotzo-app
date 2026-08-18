@@ -279,7 +279,7 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
     db.commit()
     db.refresh(empresa)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Adicionar',
-                        detalhes=f'A empresa {empresa.nome} foi adicionada')
+                        detalhes=f'A empresa {empresa.razao_social} foi adicionada')
     db.add(log)
     db.commit()
     return {"msg": "Empresa criada com sucesso!", "dados": empresa}
@@ -317,7 +317,7 @@ def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario
     usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(empresa)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Deletar',
-                        detalhes=f'A empresa {empresa.nome} foi deletada')
+                        detalhes=f'A empresa {empresa.razao_social} foi deletada')
     db.add(log)
     db.commit()
     return {"msg": "Empresa deletada."}
