@@ -63,6 +63,7 @@ class Fazenda(SQLModel, table=True):
 
 class Oferta(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    usuario_id: Optional[int] = Field(default=None, foreign_key="usuario.id")
     
     # DEPENDÊNCIAS (Chaves Estrangeiras)
     produtor_id: int = Field(foreign_key="produtor.id", index=True)
@@ -128,7 +129,6 @@ class Contrato(SQLModel, table=True):
     observacoes: Optional[str] = None
 
     # Chaves Estrangeiras (Quem fez, quem vendeu, de onde saiu, quem comprou)
-    usuario_id: int = Field(foreign_key="usuario.id")
     corretor: Optional[Usuario] = Relationship(back_populates="contratos")
     
     produtor_id: int = Field(foreign_key="produtor.id")
@@ -147,4 +147,4 @@ class Historico(SQLModel, table=True):
     id_afetado: int
     acao: str
     detalhes: Optional[str] = None
-    horario: datetime = Field(default_factory=datetime.now(ZoneInfo("America/Sao_Paulo")))
+    horario: datetime = Field(default_factory=lambda: datetime.now(ZoneInfo("America/Sao_Paulo")))
