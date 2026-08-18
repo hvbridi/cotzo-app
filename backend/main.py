@@ -169,6 +169,8 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
     db.refresh(produtor)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Adicionar',
                             detalhes=f'O produtor {produtor.nome} foi adicionado')
+    db.add(log)
+    db.commit()
     return {"msg": "Produtor criado com sucesso!", "dados": produtor}
 
 @app.get("/produtores/", tags=["Produtor"])
@@ -208,6 +210,7 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
     db.delete(produtor)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Deletar',
                                 detalhes=f'O produtor {produtor.nome} foi deletado')
+    db.add(log)
     db.commit()
     return {"msg": "Produtor deletado com sucesso."}
 
@@ -465,6 +468,8 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     session.refresh(nova_oferta)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=nova_oferta.id,acao='Adicionar',
                             detalhes=f'A oferta de id {nova_oferta.id} foi adicionado')
+    session.add(log)
+    session.commit()
 
     
     if dados.compradores_ids:
@@ -525,6 +530,7 @@ def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_l
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Deletar',
                             detalhes=f'A oferta de id {oferta.id} foi deletada')
     db.delete(oferta)
+    db.add(log)
     db.commit()
     return {"msg": "Oferta deletada."}
 
@@ -548,6 +554,8 @@ def criar_comprador(comprador: Comprador, session: Session = Depends(get_session
     session.refresh(comprador)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Adicionar',
                             detalhes=f'{comprador.nome} foi adicionado como comprador')
+    session.add(log)
+    session.commit()
     return comprador
 
 @app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
@@ -590,6 +598,7 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Deletar',
                             detalhes=f'O comprador {comprador.nome} foi deletado')
     db.delete(comprador)
+    db.add(log)
     db.commit()
     return {"msg": "Comprador deletado com sucesso."}
 
