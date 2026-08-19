@@ -1,49 +1,107 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function CadastrarEmpresa() {
   const navigate = useNavigate()
 
-  // Estados dos Dados Corporativos
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
+
+  // Estados dos Dados Corporativos (Alinhados ao Backend)
   const [razaoSocial, setRazaoSocial] = useState('')
   const [cnpj, setCnpj] = useState('')
-  const [tipoEstabelecimento, setTipoEstabelecimento] = useState('matriz')
-  const [cidade, setCidade] = useState('')
-  const [estado, setEstado] = useState('')
+  const [inscricaoEstadual, setInscricaoEstadual] = useState('')
+  const [endereco, setEndereco] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [email, setEmail] = useState('')
+  const [contatoNome, setContatoNome] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Carrega Perfil do Usuário Logado
+  useEffect(() => {
+    async function carregarPerfil() {
+      try {
+        const resMe = await apiFetch('/usuarios/me')
+        if (resMe.ok) {
+          const meData = await resMe.json()
+          setPerfil(meData)
+        } else {
+          const token = localStorage.getItem('token')
+          if (token) {
+            const payloadBase64 = token.split('.')[1]
+            const payloadJson = JSON.parse(atob(payloadBase64))
+            const emailLogado = payloadJson.sub || ''
+            const resListaU = await apiFetch('/usuarios/')
+            if (resListaU.ok) {
+              const listaU = await resListaU.json()
+              const uEncontrado = listaU.find(
+                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+              )
+              if (uEncontrado) setPerfil(uEncontrado)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao buscar perfil:', e)
+      }
+    }
+    carregarPerfil()
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setCarregando(true)
+    setErro('')
 
     try {
+      let telLimpo = telefone.replace(/\D/g, '')
+      if (telLimpo && (telLimpo.length === 10 || telLimpo.length === 11)) {
+        telLimpo = '55' + telLimpo
+      }
+
+      const payload = {
+        razao_social: razaoSocial,
+        cnpj: cnpj,
+        inscricao_estadual: inscricaoEstadual || null,
+        endereco: endereco || null,
+        telefone: telLimpo || null,
+        email: email || null,
+        contato_nome: contatoNome || null,
+      }
+
       const resposta = await apiFetch('/empresas/', {
         method: 'POST',
-        body: JSON.stringify({
-          razao_social: razaoSocial,
-          cnpj: cnpj,
-          tipo_estabelecimento: tipoEstabelecimento,
-          cidade: cidade,
-          estado: estado,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!resposta.ok) {
-        throw new Error('Erro ao salvar empresa no banco de dados.')
+        const erroDados = await resposta.json().catch(() => ({}))
+        throw new Error(
+          erroDados.detail || 'Erro ao salvar empresa no banco de dados.'
+        )
       }
 
       alert('Empresa cadastrada com sucesso!')
       navigate('/empresas')
     } catch (err) {
-      alert(err.message)
+      setErro(err.message)
+      alert(`Falha no cadastro:\n${err.message}`)
     } finally {
       setCarregando(false)
     }
   }
 
   return (
-    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in">
+    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
       {/* SideNavBar Fixa */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
@@ -65,21 +123,21 @@ export default function CadastrarEmpresa() {
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
           <Link
             to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
           </Link>
           <Link
             to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
           </Link>
           <Link
             to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span
               className="material-symbols-outlined mr-3"
@@ -91,14 +149,14 @@ export default function CadastrarEmpresa() {
           </Link>
           <Link
             to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
           </Link>
           <Link
             to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
@@ -106,19 +164,12 @@ export default function CadastrarEmpresa() {
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
           <button
             onClick={() => {
               localStorage.removeItem('token')
               navigate('/')
             }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
             Sair
@@ -126,8 +177,9 @@ export default function CadastrarEmpresa() {
         </div>
       </aside>
 
-      {/* Main Content Wrapper */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
+        {/* TopAppBar com Perfil Dinâmico */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -149,12 +201,19 @@ export default function CadastrarEmpresa() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
               </div>
             </div>
           </div>
@@ -162,7 +221,7 @@ export default function CadastrarEmpresa() {
 
         {/* Page Canvas */}
         <main className="flex-1 p-8 mt-16 bg-surface-container-lowest overflow-y-auto">
-          <div className="max-w-5xl mx-auto mb-8">
+          <div className="max-w-4xl mx-auto mb-6">
             <nav className="flex text-sm text-on-surface-variant mb-3 font-body">
               <ol className="inline-flex items-center space-x-1 md:space-x-3">
                 <li>
@@ -186,144 +245,154 @@ export default function CadastrarEmpresa() {
                 </li>
               </ol>
             </nav>
-            <h2 className="text-4xl font-headline font-bold text-on-surface">
-              Nova Empresa Compradora
+            <h2 className="text-3xl font-headline font-bold text-on-surface">
+              Cadastrar Nova Empresa Compradora
             </h2>
+            <p className="text-secondary text-sm mt-1">
+              Cadastre Tradings, Indústrias e Empresas compradoras de commodities.
+            </p>
           </div>
 
-          <form className="max-w-5xl mx-auto space-y-8" onSubmit={handleSubmit}>
-            {/* Card: Dados Corporativos */}
-            <div className="bg-surface-bright rounded-xl p-8 shadow-sm border border-outline-variant/10">
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-surface-container-high">
-                <span className="material-symbols-outlined text-tertiary text-2xl">
-                  domain
-                </span>
-                <h3 className="text-xl font-headline font-semibold text-on-surface">
-                  Dados Corporativos
+          <form className="max-w-4xl mx-auto space-y-6" onSubmit={handleSubmit}>
+            {erro && (
+              <div className="p-4 bg-error-container text-on-error-container text-sm rounded-xl font-medium border border-error/20">
+                {erro}
+              </div>
+            )}
+
+            {/* CARD 1: Dados Fiscais e Corporativos */}
+            <div className="bg-surface-bright rounded-2xl p-6 shadow-sm border border-outline-variant/20 space-y-5 font-body">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-outline-variant/20">
+                <span className="material-symbols-outlined text-primary">apartment</span>
+                <h3 className="text-lg font-headline font-bold text-on-surface">
+                  1. Dados Corporativos e Fiscais
                 </h3>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 font-body">
-                {/* Razão Social */}
-                <div className="col-span-1 md:col-span-4 flex flex-col gap-2">
-                  <label htmlFor="razaoSocial" className="text-sm font-medium text-on-surface-variant">
-                    Razão Social da Empresa
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5 md:col-span-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                    Razão Social / Nome da Trading
                   </label>
                   <input
                     type="text"
                     required
-                    id="razaoSocial"
-                    placeholder="Digite a razão social completa"
+                    placeholder="Ex: Cargill Agrícola S/A"
                     value={razaoSocial}
                     onChange={(e) => setRazaoSocial(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none"
                   />
                 </div>
 
-                {/* CNPJ */}
-                <div className="col-span-1 md:col-span-2 flex flex-col gap-2">
-                  <label htmlFor="cnpj" className="text-sm font-medium text-on-surface-variant">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
                     CNPJ
                   </label>
                   <input
                     type="text"
                     required
-                    id="cnpj"
                     placeholder="00.000.000/0000-00"
                     value={cnpj}
                     onChange={(e) => setCnpj(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none font-mono"
                   />
                 </div>
 
-                {/* Tipo */}
-                <div className="col-span-1 md:col-span-2 flex flex-col gap-2">
-                  <label className="text-sm font-medium text-on-surface-variant">
-                    Tipo de Estabelecimento
-                  </label>
-                  <div className="flex items-center h-[50px] gap-6 px-4 bg-surface-container-low rounded-lg">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="tipoEstabelecimento"
-                        value="matriz"
-                        checked={tipoEstabelecimento === 'matriz'}
-                        onChange={() => setTipoEstabelecimento('matriz')}
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <span className="text-on-surface">Matriz</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="tipoEstabelecimento"
-                        value="filial"
-                        checked={tipoEstabelecimento === 'filial'}
-                        onChange={() => setTipoEstabelecimento('filial')}
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <span className="text-on-surface">Filial</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Cidade */}
-                <div className="col-span-1 md:col-span-2 flex flex-col gap-2">
-                  <label htmlFor="cidade" className="text-sm font-medium text-on-surface-variant">
-                    Cidade
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                    Inscrição Estadual (I.E.)
                   </label>
                   <input
                     type="text"
-                    id="cidade"
-                    placeholder="Nome da cidade"
-                    value={cidade}
-                    onChange={(e) => setCidade(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Ex: 13.002.576-9"
+                    value={inscricaoEstadual}
+                    onChange={(e) => setInscricaoEstadual(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                  Endereço Completo / Localização da Sede ou Filial
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Av. das Indústrias, 1500 - Distrito Industrial, Rondonópolis - MT"
+                  value={endereco}
+                  onChange={(e) => setEndereco(e.target.value)}
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none"
+                />
+              </div>
+            </div>
+
+            {/* CARD 2: Contatos Institucionais da Empresa */}
+            <div className="bg-surface-bright rounded-2xl p-6 shadow-sm border border-outline-variant/20 space-y-5 font-body">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-outline-variant/20">
+                <span className="material-symbols-outlined text-primary">contacts</span>
+                <h3 className="text-lg font-headline font-bold text-on-surface">
+                  2. Contatos Institucionais da Mesa / Trading
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                    Telefone Geral / WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: (66) 3456-7890"
+                    value={telefone}
+                    onChange={(e) => setTelefone(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none"
                   />
                 </div>
 
-                {/* Estado */}
-                <div className="col-span-1 md:col-span-1 flex flex-col gap-2">
-                  <label htmlFor="estado" className="text-sm font-medium text-on-surface-variant">
-                    Estado
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                    E-mail Corporativo / Mesa
                   </label>
-                  <div className="relative">
-                    <select
-                      id="estado"
-                      value={estado}
-                      onChange={(e) => setEstado(e.target.value)}
-                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-lg pl-4 pr-10 py-3 text-on-surface appearance-none focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
-                    >
-                      <option value="">UF</option>
-                      <option value="SP">SP</option>
-                      <option value="MT">MT</option>
-                      <option value="GO">GO</option>
-                      <option value="PR">PR</option>
-                      <option value="MG">MG</option>
-                    </select>
-                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
-                      expand_more
-                    </span>
-                  </div>
+                  <input
+                    type="email"
+                    placeholder="originaçao@trading.com.br"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-secondary">
+                    Nome do Contato Principal
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Mesa de Soja MT"
+                    value={contatoNome}
+                    onChange={(e) => setContatoNome(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary outline-none"
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-4 pt-6 pb-12 font-body">
+            {/* Ações */}
+            <div className="flex items-center justify-end gap-3 pt-2 pb-12 font-body">
               <button
                 type="button"
                 onClick={() => navigate('/empresas')}
-                className="px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant bg-surface-bright hover:bg-surface-container-low font-semibold transition-colors cursor-pointer"
+                className="px-6 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low transition-colors cursor-pointer text-xs"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={carregando}
-                className="px-8 py-3 bg-primary text-on-primary rounded-xl font-semibold shadow-sm hover:bg-primary-container hover:text-on-primary-container transition-all cursor-pointer disabled:opacity-50"
+                className="px-7 py-2.5 bg-primary text-on-primary rounded-xl font-bold shadow-sm hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2 text-xs"
               >
-                {carregando ? 'Salvando...' : 'Salvar Cadastro'}
+                <span className="material-symbols-outlined text-base">save</span>
+                {carregando ? 'Salvando...' : 'Salvar Empresa'}
               </button>
             </div>
           </form>

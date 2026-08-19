@@ -8,10 +8,7 @@ export default function DetalhesEmpresa() {
   const empresaId = searchParams.get('id')
 
   // Perfil do Usuário Logado
-  const [perfil, setPerfil] = useState({
-    nome: '',
-    cargo: '',
-  })
+  const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
 
   // Estados de Dados do Banco
   const [empresa, setEmpresa] = useState(null)
@@ -33,33 +30,23 @@ export default function DetalhesEmpresa() {
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
   }
 
-  // Função para sanitizar e incluir DDI 55 automaticamente
   const sanitizarTelefoneWhatsApp = (num) => {
     let limpo = (num || '').replace(/\D/g, '')
-
-    if (!limpo) {
-      throw new Error('O número de WhatsApp é obrigatório.')
-    }
-
-    // Se digitado sem DDI (ex: 10 ou 11 dígitos), insere 55 automaticamente
+    if (!limpo) throw new Error('O número de WhatsApp é obrigatório.')
     if (limpo.length === 10 || limpo.length === 11) {
       limpo = '55' + limpo
     }
-
-    // Valida padrão brasileiro com 55 + DDD + Número
     if ((limpo.length !== 12 && limpo.length !== 13) || !limpo.startsWith('55')) {
       throw new Error(
         'Por favor, digite um número de WhatsApp válido com DDD (ex: 66 99988-7766 ou 5566999887766).'
       )
     }
-
     return limpo
   }
 
   const formatarTelefone = (num) => {
     if (!num) return 'Não informado'
     const limpo = num.replace(/\D/g, '')
-
     if (limpo.length === 13 && limpo.startsWith('55')) {
       return `+55 (${limpo.slice(2, 4)}) ${limpo.slice(4, 9)}-${limpo.slice(9)}`
     }
@@ -72,11 +59,9 @@ export default function DetalhesEmpresa() {
     if (limpo.length === 10) {
       return `(${limpo.slice(0, 2)}) ${limpo.slice(2, 6)}-${limpo.slice(6)}`
     }
-
     return num
   }
 
-  // Carregar dados da empresa específica e seus compradores
   const carregarDadosEmpresa = async () => {
     if (!empresaId) {
       setErro('Nenhum ID de empresa foi fornecido na URL.')
@@ -88,33 +73,14 @@ export default function DetalhesEmpresa() {
     setErro('')
 
     try {
-      // 1. Carrega Perfil do Usuário
       try {
         const resMe = await apiFetch('/usuarios/me')
         if (resMe.ok) {
           const meData = await resMe.json()
           setPerfil(meData)
-        } else {
-          const token = localStorage.getItem('token')
-          if (token) {
-            const payloadBase64 = token.split('.')[1]
-            const payloadJson = JSON.parse(atob(payloadBase64))
-            const emailLogado = payloadJson.sub || ''
-            const resListaU = await apiFetch('/usuarios/')
-            if (resListaU.ok) {
-              const listaU = await resListaU.json()
-              const uEncontrado = listaU.find(
-                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
-              )
-              if (uEncontrado) setPerfil(uEncontrado)
-            }
-          }
         }
-      } catch (e) {
-        console.error('Erro perfil:', e)
-      }
+      } catch (e) {}
 
-      // 2. Busca Empresa por ID
       let empresaEncontrada = null
       const resEmpresaUnica = await apiFetch(`/empresas/${empresaId}`)
 
@@ -136,7 +102,6 @@ export default function DetalhesEmpresa() {
 
       setEmpresa(empresaEncontrada)
 
-      // 3. Busca Compradores vinculados
       const resCompradores = await apiFetch('/compradores/')
       if (resCompradores.ok) {
         const todosCompradores = await resCompradores.json()
@@ -156,10 +121,8 @@ export default function DetalhesEmpresa() {
     carregarDadosEmpresa()
   }, [empresaId])
 
-  // Salvar novo comprador garantindo sanitização do DDI 55
   const handleCadastrarComprador = async (e) => {
     e.preventDefault()
-
     if (!empresa || !empresa.id) {
       alert('Erro: Nenhuma empresa carregada para vincular o comprador.')
       return
@@ -212,10 +175,7 @@ export default function DetalhesEmpresa() {
         method: 'DELETE',
       })
 
-      if (!resposta.ok) {
-        throw new Error('Falha ao remover o comprador.')
-      }
-
+      if (!resposta.ok) throw new Error('Falha ao remover o comprador.')
       alert('Comprador removido com sucesso!')
       carregarDadosEmpresa()
     } catch (err) {
@@ -225,7 +185,7 @@ export default function DetalhesEmpresa() {
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa */}
+      {/* SideNavBar */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -302,7 +262,6 @@ export default function DetalhesEmpresa() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        {/* TopAppBar */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -379,7 +338,7 @@ export default function DetalhesEmpresa() {
 
                 {/* Grid 3 Colunas */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Coluna 1: Dados Corporativos */}
+                  {/* Coluna 1: Dados Corporativos e Fiscais */}
                   <div className="flex flex-col gap-6 lg:col-span-1">
                     <div className="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-outline-variant/20 flex flex-col gap-6">
                       <h2 className="text-lg font-headline font-bold text-on-surface flex items-center gap-2">
@@ -393,36 +352,52 @@ export default function DetalhesEmpresa() {
                           <span className="text-xs font-label uppercase tracking-wider text-secondary">
                             CNPJ
                           </span>
-                          <span className="text-base font-body font-mono text-on-surface">
+                          <span className="text-base font-body font-mono text-on-surface font-semibold">
                             {empresa.cnpj || 'Não informado'}
                           </span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-label uppercase tracking-wider text-secondary">
-                            Inscrição Estadual
+                            Inscrição Estadual (I.E.)
                           </span>
-                          <span className="text-base font-body text-on-surface">
+                          <span className="text-base font-body text-on-surface font-mono">
                             {empresa.inscricao_estadual || 'Não informada'}
                           </span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-label uppercase tracking-wider text-secondary">
-                            Localização
+                            Telefone / WhatsApp Geral
                           </span>
-                          <span className="text-base font-body text-on-surface">
-                            {empresa.cidade
-                              ? `${empresa.cidade} - ${empresa.estado}`
-                              : 'N/A'}
+                          <span className="text-base font-body text-on-surface font-mono">
+                            {formatarTelefone(empresa.telefone)}
                           </span>
                         </div>
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-label uppercase tracking-wider text-secondary">
-                            Endereço
+                            E-mail Institucional
                           </span>
                           <span className="text-base font-body text-on-surface">
+                            {empresa.email || 'Não informado'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-label uppercase tracking-wider text-secondary">
+                            Endereço / Localização
+                          </span>
+                          <span className="text-base font-body text-on-surface leading-relaxed">
                             {empresa.endereco || 'Não informado'}
                           </span>
                         </div>
+                        {empresa.contato_nome && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-label uppercase tracking-wider text-secondary">
+                              Contato Principal
+                            </span>
+                            <span className="text-base font-body text-on-surface">
+                              {empresa.contato_nome}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -451,7 +426,7 @@ export default function DetalhesEmpresa() {
                       <div className="flex flex-col gap-3">
                         {compradores.length === 0 ? (
                           <div className="p-8 text-center text-secondary bg-surface-container-low rounded-xl">
-                            Nenhum comprador cadastrado para esta empresa ainda. Clique em "Adicionar Comprador".
+                            Nenhum comprador individual cadastrado para esta empresa ainda. Clique em "Adicionar Comprador".
                           </div>
                         ) : (
                           compradores.map((c) => {

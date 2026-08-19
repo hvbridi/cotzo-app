@@ -8,6 +8,9 @@ export default function Configuracoes() {
   // Controle de Abas
   const [abaAtiva, setAbaAtiva] = useState('geral') // 'geral' ou 'usuarios'
 
+  // Controle do Modal de Suporte
+  const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
+
   // Estados dos Meus Dados (Perfil Logado)
   const [perfil, setPerfil] = useState({
     id: null,
@@ -24,14 +27,14 @@ export default function Configuracoes() {
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('')
   const [alterandoSenha, setAlterandoSenha] = useState(false)
 
-  // Estados do Gerenciamento de Usuários (Aba Corretores)
+  // Estados do Gerenciamento de Usuários
   const [usuarios, setUsuarios] = useState([])
   const [busca, setBusca] = useState('')
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
   const [menuAbertoId, setMenuAbertoId] = useState(null)
 
-  // Campos do Modal de Novo Corretor
+  // Campos do Modal de Novo Usuário
   const [novoNome, setNovoNome] = useState('')
   const [novoEmail, setNovoEmail] = useState('')
   const [novoTelefone, setNovoTelefone] = useState('')
@@ -39,11 +42,10 @@ export default function Configuracoes() {
   const [novoCargo, setNovoCargo] = useState('corretor')
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
-  // 1. Carrega o perfil do usuário logado usando o Token JWT
+  // 1. Carrega o perfil do usuário logado
   const carregarPerfil = async () => {
     setCarregandoPerfil(true)
     try {
-      // Tenta buscar da rota /usuarios/me
       const resposta = await apiFetch('/usuarios/me')
       if (resposta.ok) {
         const dados = await resposta.json()
@@ -51,7 +53,6 @@ export default function Configuracoes() {
         return
       }
 
-      // Se /usuarios/me não retornar, lê o e-mail no Token JWT de Login
       const token = localStorage.getItem('token')
       let emailLogado = ''
 
@@ -65,7 +66,6 @@ export default function Configuracoes() {
         }
       }
 
-      // Busca no banco e filtra pelo e-mail do token
       const resLista = await apiFetch('/usuarios/')
       if (resLista.ok) {
         const lista = await resLista.json()
@@ -90,7 +90,7 @@ export default function Configuracoes() {
     carregarPerfil()
   }, [])
 
-  // 2. Ação de Alterar Senha no Backend via PUT /usuarios/{id}
+  // 2. Alteração de Senha
   const handleAlterarSenha = async (e) => {
     e.preventDefault()
 
@@ -109,7 +109,6 @@ export default function Configuracoes() {
     try {
       let resposta
 
-      // Rota principal: Atualização direta do usuário pelo ID
       if (perfil && perfil.id) {
         resposta = await apiFetch(`/usuarios/${perfil.id}`, {
           method: 'PUT',
@@ -123,7 +122,6 @@ export default function Configuracoes() {
         })
       }
 
-      // Fallback: Se não encontrou ID ou retornou erro, tenta o endpoint geral POST /alterar-senha
       if (!resposta || !resposta.ok) {
         resposta = await apiFetch('/alterar-senha', {
           method: 'POST',
@@ -153,28 +151,19 @@ export default function Configuracoes() {
     }
   }
 
-  // Sanitização de telefone com DDI 55
   const sanitizarTelefoneWhatsApp = (num) => {
     let limpo = (num || '').replace(/\D/g, '')
-
-    if (!limpo) {
-      throw new Error('O número de WhatsApp é obrigatório.')
-    }
-
-    if (limpo.length === 10 || limpo.length === 11) {
-      limpo = '55' + limpo
-    }
-
+    if (!limpo) throw new Error('O número de WhatsApp é obrigatório.')
+    if (limpo.length === 10 || limpo.length === 11) limpo = '55' + limpo
     if ((limpo.length !== 12 && limpo.length !== 13) || !limpo.startsWith('55')) {
       throw new Error(
         'Por favor, digite um número de WhatsApp válido com DDD (ex: 66 99988-7766 ou 5566999887766).'
       )
     }
-
     return limpo
   }
 
-  // Carrega lista de corretores
+  // Carrega lista de usuários (Apenas se for Admin ou Gerente)
   const carregarUsuarios = async () => {
     setCarregandoUsuarios(true)
     try {
@@ -191,12 +180,12 @@ export default function Configuracoes() {
   }
 
   useEffect(() => {
-    if (abaAtiva === 'usuarios') {
+    if (abaAtiva === 'usuarios' && (perfil.cargo === 'admin' || perfil.cargo === 'gerente')) {
       carregarUsuarios()
     }
-  }, [abaAtiva])
+  }, [abaAtiva, perfil.cargo])
 
-  // Cadastrar novo corretor
+  // Cadastrar novo usuário (Corretor, Gerente ou Admin)
   const handleCadastrarUsuario = async (e) => {
     e.preventDefault()
 
@@ -228,7 +217,7 @@ export default function Configuracoes() {
         throw new Error(erroDados.detail || 'Erro ao cadastrar novo usuário.')
       }
 
-      alert('Novo corretor cadastrado com sucesso!')
+      alert(`Novo ${novoCargo} cadastrado com sucesso!`)
       setModalAberto(false)
       setNovoNome('')
       setNovoEmail('')
@@ -243,9 +232,8 @@ export default function Configuracoes() {
     }
   }
 
-  // Deletar corretor
   const handleDeletarUsuario = async (id, nome) => {
-    if (!window.confirm(`Tem certeza que deseja remover o corretor "${nome}"?`))
+    if (!window.confirm(`Tem certeza que deseja remover o usuário "${nome}"?`))
       return
 
     try {
@@ -264,7 +252,7 @@ export default function Configuracoes() {
         throw new Error(errData.detail || 'Falha ao remover o usuário.')
       }
 
-      alert('Corretor removido com sucesso!')
+      alert('Usuário removido com sucesso!')
       carregarUsuarios()
     } catch (err) {
       alert(err.message)
@@ -282,8 +270,33 @@ export default function Configuracoes() {
     const termo = busca.toLowerCase()
     const nomeUser = (u.nome || '').toLowerCase()
     const emailUser = (u.email || '').toLowerCase()
-    return nomeUser.includes(termo) || emailUser.includes(termo)
+    const cargoUser = (u.cargo || '').toLowerCase()
+    return nomeUser.includes(termo) || emailUser.includes(termo) || cargoUser.includes(termo)
   })
+
+  // Badges de Cargo
+  const renderBadgeCargo = (cargo) => {
+    switch (cargo?.toLowerCase()) {
+      case 'admin':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-bold uppercase">
+            Administrador
+          </span>
+        )
+      case 'gerente':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container text-xs font-bold uppercase">
+            Gerente
+          </span>
+        )
+      default:
+        return (
+          <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-xs font-medium uppercase">
+            Corretor
+          </span>
+        )
+    }
+  }
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
@@ -349,13 +362,14 @@ export default function Configuracoes() {
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
+          <button
+            type="button"
+            onClick={() => setModalSuporteAberto(true)}
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">help</span>
             Suporte
-          </a>
+          </button>
           <button
             onClick={() => {
               localStorage.removeItem('token')
@@ -403,7 +417,7 @@ export default function Configuracoes() {
                     {perfil.cargo || 'Corretor'}
                   </p>
                 </div>
-                <div className="h-10 w-10 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 flex items-center justify-center font-bold text-sm text-primary">
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
                   {getIniciais(perfil.nome)}
                 </div>
               </div>
@@ -423,12 +437,12 @@ export default function Configuracoes() {
                 Configurações
               </h2>
               <p className="text-secondary text-lg">
-                Gerencie suas preferências de conta, segurança e informações de acesso.
+                Gerencie suas preferências de conta, segurança e equipe.
               </p>
             </div>
           </div>
 
-          {/* Navegação por Abas */}
+          {/* Navegação por Abas (Exibe aba de usuários para Admin e Gerente) */}
           <div className="border-b border-outline-variant/30 mb-8 flex gap-8">
             <button
               onClick={() => {
@@ -447,22 +461,24 @@ export default function Configuracoes() {
               )}
             </button>
 
-            <button
-              onClick={() => {
-                setAbaAtiva('usuarios')
-                setMenuAbertoId(null)
-              }}
-              className={`pb-4 font-label text-base transition-colors relative cursor-pointer ${
-                abaAtiva === 'usuarios'
-                  ? 'text-primary font-bold'
-                  : 'text-on-surface-variant hover:text-primary'
-              }`}
-            >
-              Gerenciar Usuários (Corretores)
-              {abaAtiva === 'usuarios' && (
-                <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-primary rounded-t-full"></span>
-              )}
-            </button>
+            {(perfil.cargo === 'admin' || perfil.cargo === 'gerente') && (
+              <button
+                onClick={() => {
+                  setAbaAtiva('usuarios')
+                  setMenuAbertoId(null)
+                }}
+                className={`pb-4 font-label text-base transition-colors relative cursor-pointer ${
+                  abaAtiva === 'usuarios'
+                    ? 'text-primary font-bold'
+                    : 'text-on-surface-variant hover:text-primary'
+                }`}
+              >
+                Gerenciar Usuários / Equipe
+                {abaAtiva === 'usuarios' && (
+                  <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-primary rounded-t-full"></span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* CONTEÚDO DA ABA 1: GERAL */}
@@ -481,7 +497,7 @@ export default function Configuracoes() {
                       </h3>
                     </div>
                     <p className="text-sm text-secondary">
-                      Informações básicas da sua conta de corretor.
+                      Informações básicas da sua conta.
                     </p>
                   </div>
 
@@ -546,6 +562,15 @@ export default function Configuracoes() {
                               : perfil.telefone || 'Não informado'
                           }
                         />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-secondary uppercase tracking-wider">
+                        Nível de Acesso
+                      </label>
+                      <div className="pt-1.5">
+                        {renderBadgeCargo(perfil.cargo)}
                       </div>
                     </div>
                   </div>
@@ -673,7 +698,7 @@ export default function Configuracoes() {
                       <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">
                         check_circle
                       </span>
-                      Altere sua senha a cada 90 dias.
+                      Altere sua senha periodicamente.
                     </li>
                   </ul>
                 </div>
@@ -681,8 +706,8 @@ export default function Configuracoes() {
             </div>
           )}
 
-          {/* CONTEÚDO DA ABA 2: GERENCIAR USUÁRIOS */}
-          {abaAtiva === 'usuarios' && (
+          {/* CONTEÚDO DA ABA 2: GERENCIAR USUÁRIOS (Admin / Gerente) */}
+          {abaAtiva === 'usuarios' && (perfil.cargo === 'admin' || perfil.cargo === 'gerente') && (
             <div className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 pb-16">
               {/* Barra de Ferramentas */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
@@ -693,21 +718,23 @@ export default function Configuracoes() {
                   </span>
                   <input
                     className="w-full bg-surface-container rounded-full py-2 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary outline-none"
-                    placeholder="Buscar corretor por nome ou email..."
+                    placeholder="Buscar por nome, e-mail ou cargo..."
                     type="text"
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
                   />
                 </div>
 
-                {/* Botão Convidar */}
-                <button
-                  onClick={() => setModalAberto(true)}
-                  className="bg-primary hover:bg-primary/90 text-on-primary font-label font-medium py-2.5 px-6 rounded-full flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap cursor-pointer shadow-sm"
-                >
-                  <span className="material-symbols-outlined text-sm">add</span>
-                  Convidar Novo Corretor
-                </button>
+                {/* Botão Convidar (Apenas Admin pode criar) */}
+                {perfil.cargo === 'admin' && (
+                  <button
+                    onClick={() => setModalAberto(true)}
+                    className="bg-primary hover:bg-primary/90 text-on-primary font-label font-medium py-2.5 px-6 rounded-full flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap cursor-pointer shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-sm">add</span>
+                    Convidar Novo Usuário
+                  </button>
+                )}
               </div>
 
               {/* Tabela de Usuários */}
@@ -718,7 +745,7 @@ export default function Configuracoes() {
                   </div>
                 ) : usuariosFiltrados.length === 0 ? (
                   <div className="p-12 text-center text-secondary">
-                    Nenhum corretor ou usuário encontrado.
+                    Nenhum usuário encontrado.
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse">
@@ -734,14 +761,13 @@ export default function Configuracoes() {
                           WhatsApp
                         </th>
                         <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                          Status
-                        </th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
                           Nível de Acesso
                         </th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
-                          Ações
-                        </th>
+                        {perfil.cargo === 'admin' && (
+                          <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
+                            Ações
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="text-sm">
@@ -763,44 +789,40 @@ export default function Configuracoes() {
                             {u.telefone || 'Não informado'}
                           </td>
                           <td className="py-4 px-6">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-container/30 text-primary text-xs font-bold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>{' '}
-                              Ativo
-                            </span>
+                            {renderBadgeCargo(u.cargo)}
                           </td>
-                          <td className="py-4 px-6 text-on-surface capitalize font-medium">
-                            {u.cargo || 'Corretor'}
-                          </td>
-                          <td className="py-4 px-6 text-right relative">
-                            <button
-                              title="Opções de Ação"
-                              onClick={() =>
-                                setMenuAbertoId(menuAbertoId === u.id ? null : u.id)
-                              }
-                              className="text-secondary hover:text-primary transition-colors cursor-pointer p-1.5 rounded-full hover:bg-surface-container"
-                            >
-                              <span className="material-symbols-outlined text-lg">
-                                settings
-                              </span>
-                            </button>
+                          {perfil.cargo === 'admin' && (
+                            <td className="py-4 px-6 text-right relative">
+                              <button
+                                title="Opções de Ação"
+                                onClick={() =>
+                                  setMenuAbertoId(menuAbertoId === u.id ? null : u.id)
+                                }
+                                className="text-secondary hover:text-primary transition-colors cursor-pointer p-1.5 rounded-full hover:bg-surface-container"
+                              >
+                                <span className="material-symbols-outlined text-lg">
+                                  settings
+                                </span>
+                              </button>
 
-                            {menuAbertoId === u.id && (
-                              <div className="absolute right-6 top-12 z-30 bg-surface-bright border border-outline-variant/30 rounded-xl shadow-lg p-1.5 w-44 text-left font-body">
-                                <button
-                                  onClick={() => {
-                                    setMenuAbertoId(null)
-                                    handleDeletarUsuario(u.id, u.nome)
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-error hover:bg-error-container/30 rounded-lg transition-colors cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-sm">
-                                    delete
-                                  </span>
-                                  Excluir Corretor
-                                </button>
-                              </div>
-                            )}
-                          </td>
+                              {menuAbertoId === u.id && (
+                                <div className="absolute right-6 top-12 z-30 bg-surface-bright border border-outline-variant/30 rounded-xl shadow-lg p-1.5 w-44 text-left font-body">
+                                  <button
+                                    onClick={() => {
+                                      setMenuAbertoId(null)
+                                      handleDeletarUsuario(u.id, u.nome)
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-error hover:bg-error-container/30 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">
+                                      delete
+                                    </span>
+                                    Excluir Usuário
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -811,7 +833,7 @@ export default function Configuracoes() {
               {/* Contagem */}
               <div className="mt-6 flex items-center justify-between text-sm text-secondary pt-4 border-t border-outline-variant/10">
                 <span>
-                  Mostrando {usuariosFiltrados.length} de {usuarios.length} corretores
+                  Mostrando {usuariosFiltrados.length} de {usuarios.length} usuários
                 </span>
               </div>
             </div>
@@ -819,13 +841,99 @@ export default function Configuracoes() {
         </main>
       </div>
 
-      {/* Modal de Convidar Novo Corretor */}
+      {/* Modal de Suporte */}
+      {modalSuporteAberto && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface-bright p-6 rounded-2xl shadow-2xl max-w-md w-full border border-outline-variant/30 animate-fade-in flex flex-col gap-5 font-body">
+            <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined text-xl">
+                    support_agent
+                  </span>
+                </div>
+                <h3 className="text-xl font-headline font-bold text-on-surface">
+                  Suporte Técnico
+                </h3>
+              </div>
+              <button
+                onClick={() => setModalSuporteAberto(false)}
+                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <p className="text-sm text-secondary">
+              Precisa de assistência ou quer deixar um feedback? Entre em contato diretamente através dos canais abaixo:
+            </p>
+
+            <div className="flex flex-col gap-3">
+              {/* WhatsApp */}
+              <a
+                href="https://wa.me/5566999590301"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border border-outline-variant/20 group hover:border-primary/40"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                  <span className="material-symbols-outlined">chat</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold uppercase text-secondary">
+                    WhatsApp
+                  </p>
+                  <p className="text-sm font-semibold text-on-surface font-mono">
+                    (66) 99959-0301
+                  </p>
+                </div>
+                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors text-sm">
+                  open_in_new
+                </span>
+              </a>
+
+              {/* E-mail */}
+              <a
+                href="mailto:lolravanello@gmail.com"
+                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border border-outline-variant/20 group hover:border-primary/40"
+              >
+                <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container group-hover:scale-105 transition-transform">
+                  <span className="material-symbols-outlined">mail</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold uppercase text-secondary">
+                    E-mail
+                  </p>
+                  <p className="text-sm font-semibold text-on-surface truncate">
+                    lolravanello@gmail.com
+                  </p>
+                </div>
+                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors text-sm">
+                  open_in_new
+                </span>
+              </a>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-outline-variant/20">
+              <button
+                type="button"
+                onClick={() => setModalSuporteAberto(false)}
+                className="px-5 py-2 rounded-xl bg-surface-container-high text-on-surface font-bold hover:bg-surface-variant cursor-pointer transition-colors text-sm"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Convidar Novo Usuário */}
       {modalAberto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-md w-full space-y-6 border border-outline-variant/30">
             <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
               <h3 className="text-xl font-headline font-bold text-on-surface">
-                Cadastrar Novo Corretor
+                Cadastrar Novo Usuário
               </h3>
               <button
                 onClick={() => setModalAberto(false)}
@@ -895,6 +1003,7 @@ export default function Configuracoes() {
                 />
               </div>
 
+              {/* Nível de Acesso (com cargo Gerente adicionado) */}
               <div>
                 <label className="block text-xs font-bold uppercase text-secondary mb-1">
                   Nível de Acesso (Cargo)
@@ -905,6 +1014,7 @@ export default function Configuracoes() {
                   className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer"
                 >
                   <option value="corretor">Corretor</option>
+                  <option value="gerente">Gerente</option>
                   <option value="admin">Administrador</option>
                 </select>
               </div>
@@ -922,7 +1032,7 @@ export default function Configuracoes() {
                   disabled={salvandoUsuario}
                   className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
                 >
-                  {salvandoUsuario ? 'Salvando...' : 'Cadastrar Corretor'}
+                  {salvandoUsuario ? 'Salvando...' : 'Cadastrar Usuário'}
                 </button>
               </div>
             </form>

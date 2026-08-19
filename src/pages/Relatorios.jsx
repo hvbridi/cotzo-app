@@ -56,24 +56,16 @@ export default function Relatorios() {
 
   // Filtragem dos contratos na memória
   const contratosFiltrados = contratos.filter((c) => {
-    // Filtro de Data Início
     if (dataInicio && c.data_fechamento < dataInicio) return false
-
-    // Filtro de Data Fim
     if (dataFim && c.data_fechamento > dataFim) return false
-
-    // Filtro de Corretor
     if (corretorId !== 'Todos' && String(c.usuario_id) !== String(corretorId)) {
       return false
     }
-
-    // Filtro de Commodity
     if (commodity !== 'Todas' && c.commodity !== commodity) return false
-
     return true
   })
 
-  // Exportação para Excel via Backend (Pandas)
+  // Exportação para Excel via Backend
   const handleExportarExcel = async () => {
     setExportando(true)
     try {
@@ -162,14 +154,8 @@ export default function Relatorios() {
           </Link>
         </nav>
 
+        {/* Rodapé da Sidebar sem o Suporte */}
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
           <button
             onClick={() => {
               localStorage.removeItem('token')
