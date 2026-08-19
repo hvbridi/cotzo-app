@@ -191,9 +191,11 @@ def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = 
     if usuario_logado.get("cargo") == "corretor" and produtor.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Você só pode editar seus próprios clientes.")
 
+    campos_permitidos = ['nome','whatsapp','cpf_cnpj','cidade','uf']
     for key, value in dados_atualizados.items():
         if hasattr(produtor, key) and key != "id":
-            setattr(produtor, key, value)
+            if key in campos_permitidos:
+                setattr(produtor, key, value)
             
     db.add(produtor)
     db.commit()
@@ -308,10 +310,12 @@ def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = De
     usuario_db = obter_usuario_db(usuario_logado, db)
     if usuario_logado.get("cargo") == "corretor" and empresa.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Você só pode editar suas próprias empresas cadastradas.")
-        
+
+    campos_permitidos = ['razao_social','cnpj','inscricao_estadual','contato_nome','telefone','email','endereco']
     for key, value in dados_atualizados.items():
         if hasattr(empresa, key) and key != "id":
-            setattr(empresa, key, value)
+            if key in campos_permitidos:
+                setattr(empresa, key, value)
             
     db.add(empresa)
     db.commit()
@@ -598,10 +602,12 @@ def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session 
     # Bloqueia se o corretor tentar editar um comprador que não é dele
     if usuario_logado.get("cargo") == "corretor" and comprador.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Permissão negada. Você só pode editar seus próprios compradores.")
-        
+
+    campos_permitidos=['nome','email','telefone']
     for key, value in dados_atualizados.items():
         if hasattr(comprador, key) and key != "id":
-            setattr(comprador, key, value)
+            if key in campos_permitidos:
+                setattr(comprador, key, value)
             
     db.add(comprador)
     db.commit()
