@@ -1,9 +1,54 @@
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../services/api'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
+
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  useEffect(() => {
+    async function carregarPerfil() {
+      try {
+        const resMe = await apiFetch('/usuarios/me')
+        if (resMe.ok) {
+          const meData = await resMe.json()
+          setPerfil(meData)
+        } else {
+          const token = localStorage.getItem('token')
+          if (token) {
+            const payloadBase64 = token.split('.')[1]
+            const payloadJson = JSON.parse(atob(payloadBase64))
+            const emailLogado = payloadJson.sub || ''
+            const resListaU = await apiFetch('/usuarios/')
+            if (resListaU.ok) {
+              const listaU = await resListaU.json()
+              const uEncontrado = listaU.find(
+                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+              )
+              if (uEncontrado) setPerfil(uEncontrado)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao buscar perfil:', e)
+      }
+    }
+
+    carregarPerfil()
+  }, [])
 
   // Busca contratos com cache automático do React Query
   const {
@@ -24,13 +69,22 @@ export default function Dashboard() {
 
   // Métricas Calculadas Dinamicamente
   const totalContratos = contratos.length
-  const volumeTotalSacas = contratos.reduce((acc, c) => acc + (Number(c.volume) || 0), 0)
-  const comissaoTotal = contratos.reduce((acc, c) => acc + (Number(c.valor_comissao) || 0), 0)
-  const valorTotalMovimentado = contratos.reduce((acc, c) => acc + (Number(c.valor_total) || 0), 0)
+  const volumeTotalSacas = contratos.reduce(
+    (acc, c) => acc + (Number(c.volume) || 0),
+    0
+  )
+  const comissaoTotal = contratos.reduce(
+    (acc, c) => acc + (Number(c.valor_comissao) || 0),
+    0
+  )
+  const valorTotalMovimentado = contratos.reduce(
+    (acc, c) => acc + (Number(c.valor_total) || 0),
+    0
+  )
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa */}
+      {/* SideNavBar Fixa Padronizada */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -108,13 +162,31 @@ export default function Dashboard() {
             <h1 className="font-headline font-bold text-lg text-on-surface">
               Visão Geral de Negócios
             </h1>
-            <Link
-              to="/fechamento"
-              className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-sm">add</span>
-              Novo Fechamento
-            </Link>
+
+            <div className="flex items-center gap-4">
+              <Link
+                to="/fechamento"
+                className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                Novo Fechamento
+              </Link>
+
+              {/* Badge do Usuário Logado */}
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 

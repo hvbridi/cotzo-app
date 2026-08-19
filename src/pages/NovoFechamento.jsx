@@ -29,7 +29,7 @@ export default function NovoFechamento() {
   const [salvando, setSalvando] = useState(false)
 
   // -------------------------------------------------------------
-  // ESTADOS DO FORMULÁRIO: CONTRATO FECHADO
+  // ESTADOS DO FORMULÁRIO: CONTRATO FECHADO (INTOCADO)
   // -------------------------------------------------------------
   const [dataFechamento, setDataFechamento] = useState(
     new Date().toISOString().split('T')[0]
@@ -57,12 +57,14 @@ export default function NovoFechamento() {
   // -------------------------------------------------------------
   const [produtorOfertaId, setProdutorOfertaId] = useState('')
   const [fazendaOfertaId, setFazendaOfertaId] = useState('')
+  const [commodityOferta, setCommodityOferta] = useState('Soja')
+  const [tipoMedidaOferta, setTipoMedidaOferta] = useState('Sacas')
   const [volumeOferta, setVolumeOferta] = useState('')
   const [precoOferta, setPrecoOferta] = useState('')
   const [moedaOferta, setMoedaOferta] = useState('BRL')
   const [dataEntregaOferta, setDataEntregaOferta] = useState('')
   const [buscaComprador, setBuscaComprador] = useState('')
-  const [empresaFiltroId, setEmpresaFiltroId] = useState('') // Filtro por Empresa no Disparo
+  const [empresaFiltroId, setEmpresaFiltroId] = useState('')
   const [compradoresSelecionados, setCompradoresSelecionados] = useState([])
   const [disparandoOferta, setDisparandoOferta] = useState(false)
 
@@ -290,7 +292,9 @@ export default function NovoFechamento() {
       const payload = {
         produtor_id: Number(produtorOfertaId),
         fazenda_id: Number(fazendaOfertaId),
+        commodity: commodityOferta,
         volume: Number(volumeOferta),
+        tipo_medida: tipoMedidaOferta,
         preco: Number(precoOferta),
         moeda: moedaOferta,
         data_entrega_embarque: dataEntregaOferta || null,
@@ -420,10 +424,10 @@ export default function NovoFechamento() {
   }
 
   return (
-    <div className="bg-background text-on-background font-body antialiased flex h-screen overflow-hidden">
-      {/* SideNavBar Fixa */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-8 px-2 pt-4">
+    <div className="bg-background text-on-background font-body antialiased flex h-screen overflow-hidden animate-fade-in">
+      {/* SideNavBar Fixa Padronizada */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
+        <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-on-primary text-xl">
@@ -439,17 +443,17 @@ export default function NovoFechamento() {
           </p>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
           <Link
             to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
           </Link>
           <Link
             to="/fechamento"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span
               className="material-symbols-outlined mr-3"
@@ -461,41 +465,34 @@ export default function NovoFechamento() {
           </Link>
           <Link
             to="/cadastros"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
           </Link>
           <Link
             to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
           </Link>
           <Link
             to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
           </Link>
         </nav>
 
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
-          <a
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform"
-            href="#"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
+        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
             onClick={() => {
               localStorage.removeItem('token')
               navigate('/')
             }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform text-left cursor-pointer"
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
             Sair
@@ -1000,6 +997,7 @@ export default function NovoFechamento() {
                       </div>
 
                       <div className="space-y-6 relative z-10 pr-1 pb-2">
+                        {/* Produtor e Fazenda */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -1059,6 +1057,48 @@ export default function NovoFechamento() {
                           </div>
                         </div>
 
+                        {/* Commodity e Unidade de Medida */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="flex flex-col gap-2">
+                            <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
+                              Commodity
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={commodityOferta}
+                                onChange={(e) => setCommodityOferta(e.target.value)}
+                                className="w-full appearance-none bg-surface border-none rounded-xl py-3 pl-4 pr-10 text-on-surface font-semibold focus:ring-2 focus:ring-primary/40 outline-none shadow-sm cursor-pointer transition-shadow"
+                              >
+                                <option value="Soja">Soja em Grãos</option>
+                                <option value="Milho">Milho em Grãos</option>
+                              </select>
+                              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
+                                arrow_drop_down
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
+                              Unidade de Medida
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={tipoMedidaOferta}
+                                onChange={(e) => setTipoMedidaOferta(e.target.value)}
+                                className="w-full appearance-none bg-surface border-none rounded-xl py-3 pl-4 pr-10 text-on-surface font-semibold focus:ring-2 focus:ring-primary/40 outline-none shadow-sm cursor-pointer transition-shadow"
+                              >
+                                <option value="Sacas">Sacas (60kg)</option>
+                                <option value="Toneladas">Toneladas</option>
+                              </select>
+                              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
+                                arrow_drop_down
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Volume e Preço */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -1074,7 +1114,7 @@ export default function NovoFechamento() {
                                 className="w-full bg-transparent border-none py-3 pl-4 pr-12 text-on-surface outline-none font-semibold text-lg text-right"
                               />
                               <span className="absolute right-4 text-on-surface-variant text-sm font-semibold pointer-events-none">
-                                scs
+                                {tipoMedidaOferta === 'Sacas' ? 'scs' : 'ton'}
                               </span>
                             </div>
                           </div>
@@ -1246,7 +1286,6 @@ export default function NovoFechamento() {
                                     {item.subtexto}
                                   </div>
                                 </div>
-                                {/* Badge com o nome da Empresa de origem do Comprador */}
                                 <div className="px-2.5 py-1 rounded-md bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-bold uppercase tracking-wider shrink-0 shadow-sm">
                                   {item.empresa}
                                 </div>
@@ -1491,7 +1530,10 @@ export default function NovoFechamento() {
                           {/* Icon Visualization */}
                           <div className="relative z-10">
                             <div className="w-32 h-32 rounded-full bg-surface flex items-center justify-center shadow-lg relative mx-auto group">
-                              <div className="absolute inset-0 bg-tertiary/20 rounded-full animate-ping opacity-30" style={{ animationDuration: '3s' }}></div>
+                              <div
+                                className="absolute inset-0 bg-tertiary/20 rounded-full animate-ping opacity-30"
+                                style={{ animationDuration: '3s' }}
+                              ></div>
                               <div className="absolute inset-2 bg-surface-container-lowest rounded-full shadow-inner"></div>
                               <span
                                 className="material-symbols-outlined text-6xl text-tertiary relative z-10 drop-shadow-sm transition-transform duration-500 group-hover:rotate-180"

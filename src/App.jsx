@@ -1,6 +1,8 @@
 import { Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+import Fazendas from './pages/Fazendas'
+import DetalhesFazenda from './pages/DetalhesFazenda'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import NovoFechamento from './pages/NovoFechamento'
@@ -29,23 +31,33 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Routes>
-        {/* Rota Pública (Apenas Login) */}
+        {/* Rota Pública */}
         <Route path="/" element={<Login />} />
 
-        {/* Rotas Protegidas (Exigem Login Ativo) */}
+        {/* Rotas Protegidas */}
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/fechamento" element={<NovoFechamento />} />
           <Route path="/cadastros" element={<Cadastros />} />
+          
+          {/* Fazendas */}
+          <Route path="/fazendas" element={<Fazendas />} />
           <Route path="/cadastrar-fazenda" element={<CadastrarFazenda />} />
+          <Route path="/detalhes-fazenda" element={<DetalhesFazenda />} />
+
+          {/* Produtores */}
           <Route path="/produtores" element={<Produtores />} />
+
+          {/* Empresas */}
           <Route path="/empresas" element={<Empresas />} />
           <Route path="/cadastrar-empresa" element={<CadastrarEmpresa />} />
           <Route path="/detalhes-empresa" element={<DetalhesEmpresa />} />
+
+          {/* Relatórios, Ofertas e Configurações */}
           <Route path="/relatorios" element={<Relatorios />} />
-          <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/ofertas" element={<Ofertas />} />
           <Route path="/detalhes-contrato" element={<DetalhesContrato />} />
+          <Route path="/configuracoes" element={<Configuracoes />} />
         </Route>
       </Routes>
     </QueryClientProvider>
