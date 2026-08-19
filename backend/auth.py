@@ -29,7 +29,7 @@ def verificar_senha(senha_limpa, senha_hash):
 def criar_token_acesso(dados: dict):
     dados_copia = dados.copy()
     expiracao = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    dados_copia.update({"exp": expiracao})
+    dados_copia['exp'] = expiracao
     token_jwt = jwt.encode(dados_copia, SECRET_KEY, algorithm=ALGORITHM)
     return token_jwt
 
