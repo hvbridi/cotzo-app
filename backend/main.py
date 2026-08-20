@@ -358,10 +358,14 @@ def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario
 # 📄 E. CONTRATOS (O Coração do Sistema)
 # ==========================================
 @app.post("/contratos/", tags=["Contrato"])
-def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def criar_contrato(
+    contrato: Contrato, 
+    background_tasks: BackgroundTasks, # 👈 1. Injetou o BackgroundTasks aqui
+    db: Session = Depends(get_session), 
+    usuario_logado=Depends(usuario_atual)
+):
     usuario_db = obter_usuario_db(usuario_logado, db)
     
-    # O dono do contrato é sempre quem está logado, a menos que o admin passe outro ID
     if usuario_logado.get("cargo") == "corretor" or not contrato.usuario_id:
         contrato.usuario_id = usuario_db.id
 
@@ -371,12 +375,10 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
     db.add(contrato)
     db.commit()
     db.refresh(contrato)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Adicionar',
-                        detalhes=f'O contrato de id {contrato.id} foi adicionado')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Adicionar', detalhes=f'O contrato de id {contrato.id} foi adicionado')
     db.add(log)
     db.commit()
     
-    # ================= DISPAROS DO WHATSAPP =================
     produtor = db.get(Produtor, contrato.produtor_id)
     empresa = db.get(Empresa, contrato.empresa_id)
     fazenda = db.get(Fazenda, contrato.fazenda_id)
@@ -384,6 +386,7 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
     nome_corretor = usuario_db.nome if usuario_db else "Corretor"
     telefone_corretor = usuario_db.telefone if usuario_db else ""
 
+    # 👈 2. Disparo do Produtor em segundo plano
     if produtor and produtor.whatsapp:
         msg_produtor = (
             f"🤝 *CONTRATO FECHADO COM SUCESSO!* 🤝\n\n"
@@ -391,19 +394,22 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
             f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
             f"📦 *Volume:* {contrato.volume:,.2f} {contrato.tipo_medida.lower()}\n"
             f"💰 *Preço:* {contrato.moeda} {contrato.preco_unitario:,.2f} / {contrato.tipo_medida.lower()}\n"
-            f"🏢 *Comprador:* {empresa.razao_social}\n"
+            f"🏢 *Comprador:* {empresa.razao_social if empresa else 'N/A'}\n"
             f"🚚 *Frete:* {contrato.tipo_frete}\n\n"
             f"👨‍💼 *Corretor responsável:* {nome_corretor}\n"
             f"Agradecemos a confiança e ótimos negócios!"
         )
-        disparar_whatsapp_comprador(produtor.whatsapp, msg_produtor)
+        background_tasks.add_task(disparar_whatsapp_comprador, produtor.whatsapp, msg_produtor)
 
+    # 👈 3. Disparo da Empresa em segundo plano
     if empresa and empresa.telefone:
+        fazenda_nome = fazenda.nome if fazenda else "N/A"
+        produtor_nome = produtor.nome if produtor else "N/A"
         msg_empresa = (
             f"📄 *NOVO FECHAMENTO DE CONTRATO* 📄\n\n"
             f"Olá equipe *{empresa.razao_social}*, um novo negócio foi fechado:\n\n"
-            f"👤 *Produtor:* {produtor.nome}\n"
-            f"🚜 *Origem:* {fazenda.nome}\n"
+            f"👤 *Produtor:* {produtor_nome}\n"
+            f"🚜 *Origem:* {fazenda_nome}\n"
             f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
             f"📦 *Volume:* {contrato.volume:,.2f} {contrato.tipo_medida.lower()}\n"
             f"💰 *Preço Acordado:* {contrato.moeda} {contrato.preco_unitario:,.2f}\n"
@@ -412,7 +418,7 @@ def criar_contrato(contrato: Contrato, db: Session = Depends(get_session), usuar
             f"📞 *Contato do Corretor:* {telefone_corretor}\n\n"
             f"Em breve enviaremos a documentação oficial."
         )
-        disparar_whatsapp_comprador(empresa.telefone, msg_empresa)
+        background_tasks.add_task(disparar_whatsapp_comprador, empresa.telefone, msg_empresa)
         
     return {"msg": "Contrato emitido e notificações enviadas com sucesso!", "dados": contrato}
 
@@ -480,7 +486,12 @@ class OfertaCreate(BaseModel):
     compradores_ids: List[int] = []
 
 @app.post("/ofertas/", response_model=Oferta, tags=["Oferta"])
-def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def criar_oferta(
+    dados: OfertaCreate, 
+    background_tasks: BackgroundTasks, # 👈 1. Injetou o BackgroundTasks aqui
+    session: Session = Depends(get_session), 
+    usuario_logado=Depends(usuario_atual)
+):
     fazenda_db = session.get(Fazenda, dados.fazenda_id)
     if not fazenda_db: raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
     if fazenda_db.produtor_id != dados.produtor_id: raise HTTPException(status_code=403)
@@ -489,7 +500,7 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     if not usuario_db or not usuario_db.telefone: raise HTTPException(status_code=400, detail="Corretor sem telefone.")
         
     nova_oferta = Oferta(
-        usuario_id=usuario_db.id, # <--- DONO DA OFERTA
+        usuario_id=usuario_db.id,
         produtor_id=dados.produtor_id,
         fazenda_id=dados.fazenda_id,
         commodity=dados.commodity,
@@ -503,14 +514,14 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
     session.add(nova_oferta)
     session.commit()
     session.refresh(nova_oferta)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=nova_oferta.id,acao='Adicionar',
-                            detalhes=f'A oferta de id {nova_oferta.id} foi adicionado')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Ofertas', id_afetado=nova_oferta.id, acao='Adicionar', detalhes=f'A oferta de id {nova_oferta.id} foi adicionado')
     session.add(log)
     session.commit()
 
-    
     if dados.compradores_ids:
-        produtor_nome = fazenda_db.produtor.nome
+        # Busca segura do produtor direto pelo banco
+        produtor = session.get(Produtor, dados.produtor_id)
+        produtor_nome = produtor.nome if produtor else "Produtor"
         fazenda_nome = fazenda_db.nome
         texto_mensagem = (
             f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
@@ -525,10 +536,11 @@ def criar_oferta(dados: OfertaCreate, session: Session = Depends(get_session), u
             f"Responda esta mensagem ou clique no número acima para negociar!"
         )
         
+        # 👈 2. Envia para a fila de segundo plano em vez de travar o loop
         for comprador_id in dados.compradores_ids:
             comprador = session.get(Comprador, comprador_id)
             if comprador and comprador.telefone:
-                disparar_whatsapp_comprador(comprador.telefone, texto_mensagem)
+                background_tasks.add_task(disparar_whatsapp_comprador, comprador.telefone, texto_mensagem)
 
     return nova_oferta
 
