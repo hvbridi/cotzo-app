@@ -83,6 +83,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class EsqueciSenhaRequest(BaseModel):
+    email: str
+
 # ==========================================
 # 🔐 LOGIN E USUÁRIOS
 # ==========================================
@@ -124,6 +127,14 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
     usuarios = db.exec(select(Usuario)).all()
     return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
+@app.get('/usuarios/me/', tags=["Usuario"])
+def ler_usuario_atual(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    usuario_db = obter_usuario_db(usuario_logado,db)
+    if not usuario_db:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    usuario_dict = usuario_db.model_dump()
+    usuario_dict.pop('senha_hash', None)
+    return usuario_dict
 @app.put("/usuarios/{usuario_id}", tags=["Usuario"])
 def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != "admin":
@@ -269,6 +280,8 @@ def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = De
 def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     fazenda = db.get(Fazenda, fazenda_id)
+    if not fazenda:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(fazenda)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Deletar',
@@ -330,6 +343,8 @@ def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = De
 def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(empresa)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Deletar',
@@ -439,6 +454,8 @@ def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = 
 def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     contrato = db.get(Contrato, contrato_id)
+    if not contrato:
+        raise HTTPException(status_code=404, detail="Contrato não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
     db.delete(contrato)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Deletar',
@@ -550,6 +567,8 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
 def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     oferta = db.get(Oferta, oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrado.")
     usuario_db = obter_usuario_db(usuario_logado,db)
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Deletar',
                             detalhes=f'A oferta de id {oferta.id} foi deletada')
@@ -625,6 +644,8 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
         raise HTTPException(status_code=403)
     usuario_db=obter_usuario_db(usuario_logado,db)
     comprador = db.get(Comprador, comprador_id)
+    if not comprador:
+        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
     log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Deletar',
                             detalhes=f'O comprador {comprador.nome} foi deletado')
     db.delete(comprador)
@@ -729,18 +750,21 @@ def exportar_dados_para_excel(
 
 @app.post("/esqueci-senha", tags=["Senha"])
 @limiter.limit("3/minute")
-def esqueci_senha(request: Request, email: str, db: Session = Depends(get_session)):
-    # 1. Busca o usuário pelo e-mail
-    usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
+def esqueci_senha(
+    request: Request, 
+    dados: EsqueciSenhaRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_session)
+):
+    # 1. Busca pelo objeto 'dados.email'
+    usuario = db.exec(select(Usuario).where(Usuario.email == dados.email)).first()
     
     if not usuario:
         return {"msg": "Se o e-mail estiver cadastrado, as instruções serão enviadas."}
         
-    # 2. Segurança: Verifica se o usuário tem um WhatsApp cadastrado no banco
     if not usuario.telefone:
         raise HTTPException(status_code=400, detail="Este usuário não possui um telefone cadastrado para receber o token. Contate o administrador.")
     
-    # 3. Gera um token seguro e único e define a validade (15 minutos)
     token_recuperacao = "".join(secrets.choice(string.digits) for _ in range(6))
     usuario.reset_token = token_recuperacao
     usuario.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
@@ -748,7 +772,6 @@ def esqueci_senha(request: Request, email: str, db: Session = Depends(get_sessio
     db.add(usuario)
     db.commit()
     
-    # 4. DISPARO DO WHATSAPP (Usando a sua função já existente da Evolution API)
     texto_whatsapp = (
         f"🔐 *Recuperação de Senha*\n\n"
         f"Olá {usuario.nome}, você solicitou a redefinição de senha no sistema.\n\n"
@@ -757,7 +780,8 @@ def esqueci_senha(request: Request, email: str, db: Session = Depends(get_sessio
         f"⏳ _Este token é válido por 15 minutos._"
     )
     
-    disparar_whatsapp_comprador(usuario.telefone, texto_whatsapp)
+    # Envio em segundo plano
+    background_tasks.add_task(disparar_whatsapp_comprador, usuario.telefone, texto_whatsapp)
     
     return {"msg": "As instruções foram enviadas para o seu WhatsApp cadastrado!"}
 
