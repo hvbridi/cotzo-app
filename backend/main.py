@@ -477,6 +477,7 @@ def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuar
 class OfertaCreate(BaseModel):
     produtor_id: int
     fazenda_id: int
+    tipo_oferta: str = "Oferta"
     commodity: str = "Soja"
     volume: int
     tipo_medida: str = "Sacas"
@@ -503,6 +504,7 @@ def criar_oferta(
         usuario_id=usuario_db.id,
         produtor_id=dados.produtor_id,
         fazenda_id=dados.fazenda_id,
+        tipo_oferta=dados.tipo_oferta,
         commodity=dados.commodity,
         volume=dados.volume,
         tipo_medida=dados.tipo_medida,
@@ -558,7 +560,7 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depe
     if usuario_logado.get("cargo") == "corretor" and oferta.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Permissão negada.")
         
-    campos_permitidos = ["commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
+    campos_permitidos = ['tipo_oferta', "commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
     for key, value in dados_atualizados.items():
         if hasattr(oferta, key) and key in campos_permitidos:
             setattr(oferta, key, value)

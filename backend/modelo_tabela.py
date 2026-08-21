@@ -70,6 +70,7 @@ class Oferta(SQLModel, table=True):
     fazenda_id: int = Field(foreign_key="fazenda.id", index=True)
     
     # DADOS DA OFERTA
+    tipo_oferta: str = Field(default="Oferta", description="'Oferta' ou 'Bid'")
     commodity: str = Field(default="Soja", description="'Soja' ou 'Milho'")
     volume: float = Field(description="Quantidade em sacas (ex: 5000)")
     tipo_medida: str = Field(default="Sacas", description="'Sacas' ou 'Toneladas'")
