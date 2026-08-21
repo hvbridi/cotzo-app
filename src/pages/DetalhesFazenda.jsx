@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function DetalhesFazenda() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const fazendaId = searchParams.get('id')
   const produtorIdParam = searchParams.get('produtor_id')
@@ -15,7 +16,7 @@ export default function DetalhesFazenda() {
   const [erro, setErro] = useState('')
 
   const getIniciais = (nome) => {
-    if (!nome) return 'LR'
+    if (!nome) return 'US'
     const partes = nome.trim().split(' ')
     if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
@@ -43,16 +44,27 @@ export default function DetalhesFazenda() {
 
       setCarregando(true)
       try {
-        // Carrega Perfil
+        // 1. Carrega Perfil do Usuário
         try {
           const resMe = await apiFetch('/usuarios/me')
           if (resMe.ok) {
             const meData = await resMe.json()
             setPerfil(meData)
+          } else {
+            const token = localStorage.getItem('token')
+            if (token) {
+              const payload = JSON.parse(atob(token.split('.')[1]))
+              setPerfil({
+                nome: payload.nome || payload.sub?.split('@')[0] || 'Usuário',
+                cargo: payload.cargo || '',
+              })
+            }
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error('Erro ao buscar perfil:', e)
+        }
 
-        // Busca lista de produtores
+        // 2. Busca lista de produtores e fazendas
         const resProdutores = await apiFetch('/produtores/')
         if (!resProdutores.ok) throw new Error('Falha ao carregar dados.')
         const listaProdutores = await resProdutores.json()
@@ -60,7 +72,6 @@ export default function DetalhesFazenda() {
         let fazendaEncontrada = null
         let produtorEncontrado = null
 
-        // Se tiver o produtor_id, busca direto
         if (produtorIdParam) {
           produtorEncontrado = listaProdutores.find((p) => String(p.id) === String(produtorIdParam))
           if (produtorEncontrado) {
@@ -72,7 +83,6 @@ export default function DetalhesFazenda() {
           }
         }
 
-        // Se ainda não achou, varre todos os produtores
         if (!fazendaEncontrada) {
           for (const p of listaProdutores) {
             const resF = await apiFetch(`/produtores/${p.id}/fazendas`)
@@ -102,7 +112,13 @@ export default function DetalhesFazenda() {
     carregarDetalhes()
   }, [fazendaId, produtorIdParam])
 
+  // Apenas Admin pode deletar
   const handleDeletarFazenda = async () => {
+    if (perfil?.cargo?.toLowerCase() !== 'admin') {
+      alert('Acesso negado: Apenas administradores podem excluir fazendas.')
+      return
+    }
+
     if (!window.confirm(`Deseja realmente excluir a fazenda "${fazenda.nome}"?`)) return
 
     try {
@@ -113,6 +129,37 @@ export default function DetalhesFazenda() {
     } catch (err) {
       alert(err.message)
     }
+  }
+
+  // Destaca a rota atual e suas subcategorias correspondentes
+  const getNavLinkClass = (path) => {
+    let isActive = false
+
+    if (path === '/cadastros') {
+      const subRotasCadastros = [
+        '/cadastros',
+        '/fazendas',
+        '/produtores',
+        '/empresas',
+        '/cadastrar-fazenda',
+        '/cadastrar-empresa',
+        '/detalhes-fazenda',
+        '/detalhes-empresa',
+      ]
+      isActive = subRotasCadastros.some((r) => location.pathname.startsWith(r))
+    } else if (path === '/relatorios') {
+      isActive = ['/relatorios', '/detalhes-contrato'].some((r) =>
+        location.pathname.startsWith(r)
+      )
+    } else {
+      isActive = location.pathname === path
+    }
+
+    return `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
   }
 
   return (
@@ -130,28 +177,35 @@ export default function DetalhesFazenda() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <Link to="/dashboard" className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150">
+          <NavLink to="/dashboard" className={() => getNavLinkClass('/dashboard')}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
-          </Link>
-          <Link to="/fechamento" className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150">
+          </NavLink>
+
+          <NavLink to="/fechamento" className={() => getNavLinkClass('/fechamento')}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
-          </Link>
-          <Link to="/cadastros" className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150">
-            <span className="material-symbols-outlined mr-3" style={{ fontVariationSettings: "'FILL' 1" }}>
-              person_book
-            </span>
+          </NavLink>
+
+          <NavLink to="/cadastros" className={() => getNavLinkClass('/cadastros')}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
-          </Link>
-          <Link to="/relatorios" className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150">
+          </NavLink>
+
+          <NavLink to="/ofertas" className={() => getNavLinkClass('/ofertas')}>
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </NavLink>
+
+          <NavLink to="/relatorios" className={() => getNavLinkClass('/relatorios')}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
-          </Link>
-          <Link to="/configuracoes" className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150">
+          </NavLink>
+
+          <NavLink to="/configuracoes" className={() => getNavLinkClass('/configuracoes')}>
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
-          </Link>
+          </NavLink>
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
@@ -195,14 +249,14 @@ export default function DetalhesFazenda() {
               <div className="flex items-center gap-3 ml-2 cursor-pointer">
                 <div className="text-right hidden md:block">
                   <p className="text-sm font-bold text-on-surface leading-tight">
-                    {perfil.nome || 'Luís miguel Ravanello'}
+                    {perfil.nome || 'Usuário'}
                   </p>
                   <p className="text-xs text-on-surface-variant capitalize">
-                    {perfil.cargo || 'Admin'}
+                    {perfil.cargo || 'Corretor'}
                   </p>
                 </div>
                 <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
-                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                  {getIniciais(perfil.nome || 'Usuário')}
                 </div>
               </div>
             </div>
@@ -247,13 +301,16 @@ export default function DetalhesFazenda() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleDeletarFazenda}
-                    className="px-4 py-2.5 rounded-xl border border-error/40 text-error hover:bg-error-container/30 font-bold text-xs transition-colors self-start sm:self-auto flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-base">delete</span>
-                    Excluir Fazenda
-                  </button>
+                  {/* Botão de Excluir visível SOMENTE para Administrador */}
+                  {perfil?.cargo?.toLowerCase() === 'admin' && (
+                    <button
+                      onClick={handleDeletarFazenda}
+                      className="px-4 py-2.5 rounded-xl border border-error/40 text-error hover:bg-error-container/30 font-bold text-xs transition-colors self-start sm:self-auto flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-base">delete</span>
+                      Excluir Fazenda
+                    </button>
+                  )}
                 </div>
 
                 {/* Grid 3 Colunas */}

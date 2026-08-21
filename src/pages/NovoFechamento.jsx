@@ -29,7 +29,7 @@ export default function NovoFechamento() {
   const [salvando, setSalvando] = useState(false)
 
   // -------------------------------------------------------------
-  // ESTADOS DO FORMULÁRIO: CONTRATO FECHADO (INTOCADO)
+  // ABA 1: CONTRATO FECHADO
   // -------------------------------------------------------------
   const [dataFechamento, setDataFechamento] = useState(
     new Date().toISOString().split('T')[0]
@@ -46,14 +46,13 @@ export default function NovoFechamento() {
   const [numeroContratoTrading, setNumeroContratoTrading] = useState('')
   const [comissaoPorcentagem, setComissaoPorcentagem] = useState('1.00')
 
-  // IDs Selecionados (Contrato)
   const [produtorId, setProdutorId] = useState('')
   const [fazendaId, setFazendaId] = useState('')
   const [empresaId, setEmpresaId] = useState('')
   const [usuarioId, setUsuarioId] = useState('')
 
   // -------------------------------------------------------------
-  // ESTADOS DO FORMULÁRIO: OFERTA / DISPARO
+  // ABA 2: OFERTA / DISPARO
   // -------------------------------------------------------------
   const [produtorOfertaId, setProdutorOfertaId] = useState('')
   const [fazendaOfertaId, setFazendaOfertaId] = useState('')
@@ -69,26 +68,25 @@ export default function NovoFechamento() {
   const [disparandoOferta, setDisparandoOferta] = useState(false)
 
   // -------------------------------------------------------------
-  // ESTADOS DO FORMULÁRIO: REGISTRAR BID / ALVO
+  // ABA 3: REGISTRAR BID / ALVO
   // -------------------------------------------------------------
   const [produtorBidId, setProdutorBidId] = useState('')
   const [fazendaBidId, setFazendaBidId] = useState('')
-  const [commodityBid, setCommodityBid] = useState('soja')
+  const [commodityBid, setCommodityBid] = useState('Soja')
   const [volumeBid, setVolumeBid] = useState('')
+  const [tipoMedidaBid, setTipoMedidaBid] = useState('Sacas')
   const [precoBid, setPrecoBid] = useState('')
-  const [moedaBid, setMoedaBid] = useState('brl')
+  const [moedaBid, setMoedaBid] = useState('BRL')
   const [validadeBid, setValidadeBid] = useState('')
   const [salvandoBid, setSalvandoBid] = useState(false)
 
-  // Gera as iniciais do nome para o badge do topo
   const getIniciais = (nome) => {
-    if (!nome) return 'LR'
+    if (!nome) return 'US'
     const partes = nome.trim().split(' ')
     if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
   }
 
-  // 1. Carrega Perfil, Produtores, Empresas, Compradores (Pessoas) e Usuários
   useEffect(() => {
     async function carregarDadosIniciais() {
       setCarregandoDados(true)
@@ -96,33 +94,24 @@ export default function NovoFechamento() {
         try {
           const resMe = await apiFetch('/usuarios/me')
           if (resMe.ok) {
-            const meData = await resMe.json()
-            setPerfil(meData)
+            setPerfil(await resMe.json())
           } else {
             const token = localStorage.getItem('token')
             if (token) {
-              const payloadBase64 = token.split('.')[1]
-              const payloadJson = JSON.parse(atob(payloadBase64))
-              const emailLogado = payloadJson.sub || ''
-              const resListaU = await apiFetch('/usuarios/')
-              if (resListaU.ok) {
-                const listaU = await resListaU.json()
-                const uEncontrado = listaU.find(
-                  (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
-                )
-                if (uEncontrado) setPerfil(uEncontrado)
-              }
+              const payload = JSON.parse(atob(token.split('.')[1]))
+              setPerfil({
+                nome: payload.nome || payload.sub?.split('@')[0] || 'Usuário',
+                cargo: payload.cargo || 'Corretor',
+              })
             }
           }
-        } catch (errPerfil) {
-          console.error('Erro ao buscar perfil:', errPerfil)
-        }
+        } catch (e) {}
 
         const [resProdutores, resEmpresas, resUsuarios, resCompradores] =
           await Promise.all([
             apiFetch('/produtores/'),
             apiFetch('/empresas/'),
-            apiFetch('/usuarios/'),
+            apiFetch('/usuarios/').catch(() => ({ ok: false })),
             apiFetch('/compradores/').catch(() => null),
           ])
 
@@ -136,24 +125,18 @@ export default function NovoFechamento() {
           }
         }
 
-        let listaEmpresas = []
         if (resEmpresas && resEmpresas.ok) {
-          listaEmpresas = await resEmpresas.json()
-          setEmpresas(listaEmpresas)
-          if (listaEmpresas.length > 0) {
-            setEmpresaId(listaEmpresas[0].id)
-          }
+          const dadosEmpresas = await resEmpresas.json()
+          setEmpresas(dadosEmpresas)
+          if (dadosEmpresas.length > 0) setEmpresaId(dadosEmpresas[0].id)
         }
 
-        let listaCompradores = []
         if (resCompradores && resCompradores.ok) {
-          listaCompradores = await resCompradores.json()
-          setCompradores(listaCompradores)
-          if (listaCompradores.length > 0) {
-            setCompradoresSelecionados(listaCompradores.map((c) => c.id))
+          const dadosCompradores = await resCompradores.json()
+          setCompradores(dadosCompradores)
+          if (dadosCompradores.length > 0) {
+            setCompradoresSelecionados(dadosCompradores.map((c) => c.id))
           }
-        } else {
-          setCompradoresSelecionados(listaEmpresas.map((e) => e.id))
         }
 
         if (resUsuarios && resUsuarios.ok) {
@@ -171,7 +154,6 @@ export default function NovoFechamento() {
     carregarDadosIniciais()
   }, [])
 
-  // 2. Busca as Fazendas do Produtor Selecionado
   useEffect(() => {
     let pId = produtorId
     if (abaAtiva === 'oferta') pId = produtorOfertaId
@@ -212,12 +194,11 @@ export default function NovoFechamento() {
     carregarFazendasDoProdutor()
   }, [produtorId, produtorOfertaId, produtorBidId, abaAtiva])
 
-  // Cálculos financeiros do contrato
   const totalCalculado = Number(volume || 0) * Number(precoUnitario || 0)
   const comissaoCalculada =
     totalCalculado * (Number(comissaoPorcentagem || 0) / 100)
 
-  // Submeter Contrato Fechado
+  // Submeter Contrato
   const handleSubmitContrato = async (e) => {
     e.preventDefault()
 
@@ -261,7 +242,7 @@ export default function NovoFechamento() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['contratos'] })
-      alert('Contrato de Fechamento emitido com sucesso! Informação salva no Dashboard')
+      alert('Contrato de Fechamento emitido com sucesso!')
       navigate('/dashboard')
     } catch (err) {
       alert(err.message)
@@ -287,8 +268,6 @@ export default function NovoFechamento() {
     setDisparandoOferta(true)
 
     try {
-      const empresasIds = empresas.map((e) => e.id)
-
       const payload = {
         produtor_id: Number(produtorOfertaId),
         fazenda_id: Number(fazendaOfertaId),
@@ -299,7 +278,6 @@ export default function NovoFechamento() {
         moeda: moedaOferta,
         data_entrega_embarque: dataEntregaOferta || null,
         compradores_ids: compradoresSelecionados,
-        empresas_ids: empresasIds,
       }
 
       const resposta = await apiFetch('/ofertas/', {
@@ -309,26 +287,13 @@ export default function NovoFechamento() {
 
       if (!resposta.ok) {
         const erroDados = await resposta.json().catch(() => ({}))
-        let msgErro = 'Erro ao disparar ofertas no mercado.'
-
-        if (erroDados.detail) {
-          if (typeof erroDados.detail === 'string') {
-            msgErro = erroDados.detail
-          } else if (Array.isArray(erroDados.detail)) {
-            msgErro = erroDados.detail
-              .map((d) => `${d.loc ? d.loc.join('.') : ''}: ${d.msg}`)
-              .join('\n')
-          } else {
-            msgErro = JSON.stringify(erroDados.detail)
-          }
-        }
-        throw new Error(msgErro)
+        throw new Error(erroDados.detail || 'Erro ao disparar ofertas no mercado.')
       }
 
       alert(
         `Oferta registrada! O sistema iniciou o disparo via WhatsApp para ${compradoresSelecionados.length} destinatários.`
       )
-      navigate('/dashboard')
+      navigate('/ofertas')
     } catch (err) {
       alert(`Falha no disparo:\n${err.message}`)
     } finally {
@@ -336,7 +301,7 @@ export default function NovoFechamento() {
     }
   }
 
-  // Submeter Registro de BID / Alvo
+  // Submeter Registro de BID / Alvo (Sem envio de WhatsApp)
   const handleSalvarBid = async (e) => {
     e.preventDefault()
 
@@ -353,23 +318,25 @@ export default function NovoFechamento() {
         fazenda_id: Number(fazendaBidId),
         commodity: commodityBid,
         volume: Number(volumeBid),
-        preco_alvo: Number(precoBid),
-        moeda: moedaBid.toUpperCase(),
-        validade: validadeBid || null,
-        status: 'Ativo',
+        tipo_medida: tipoMedidaBid,
+        preco: Number(precoBid),
+        moeda: moedaBid,
+        data_entrega_embarque: validadeBid || new Date().toISOString().split('T')[0],
+        compradores_ids: [], // Não dispara WhatsApp
       }
 
-      const resposta = await apiFetch('/ofertas/bid', {
+      const resposta = await apiFetch('/ofertas/', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
 
       if (!resposta.ok) {
-        console.warn('Backend sem endpoint especifico de BID, simulando salvamento...')
+        const erroDados = await resposta.json().catch(() => ({}))
+        throw new Error(erroDados.detail || 'Falha ao registrar o BID/Oferta Firme.')
       }
 
-      alert('BID / Intenção de Venda cadastrado com sucesso no Painel de Monitoramento!')
-      navigate('/dashboard')
+      alert('BID / Preço-Alvo salvo com sucesso no Mural de Ofertas!')
+      navigate('/ofertas')
     } catch (err) {
       alert(err.message)
     } finally {
@@ -377,15 +344,14 @@ export default function NovoFechamento() {
     }
   }
 
-  // Lista unificada para seleção de Compradores com Empresa vinculada
   const listaDestinatarios =
     compradores.length > 0
       ? compradores.map((c) => ({
           id: c.id,
           nome: c.nome,
-          subtexto: c.telefone || c.whatsapp || 'Sem telefone',
-          empresa: c.empresa_nome || c.empresa?.razao_social || 'Trading',
-          empresa_id: c.empresa_id || c.empresa?.id,
+          subtexto: c.telefone || 'Sem telefone',
+          empresa: c.empresa?.razao_social || 'Trading',
+          empresa_id: c.empresa_id,
         }))
       : empresas.map((e) => ({
           id: e.id,
@@ -395,7 +361,6 @@ export default function NovoFechamento() {
           empresa_id: e.id,
         }))
 
-  // Filtro Duplo: Busca em texto e Filtro por Empresa
   const destinatariosFiltrados = listaDestinatarios.filter((item) => {
     const termo = buscaComprador.toLowerCase()
     const nome = (item.nome || '').toLowerCase()
@@ -424,12 +389,12 @@ export default function NovoFechamento() {
   }
 
   const getNavLinkClass = ({ isActive }) =>
-  `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
-    isActive
-      ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
-      : 'text-on-surface-variant hover:bg-surface-variant/50'
-  }`
-  
+    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+
   return (
     <div className="bg-background text-on-background font-body antialiased flex h-screen overflow-hidden animate-fade-in">
       {/* SideNavBar Fixa Padronizada */}
@@ -451,36 +416,36 @@ export default function NovoFechamento() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-  <NavLink to="/dashboard" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">dashboard</span>
-    Dashboard
-  </NavLink>
+          <NavLink to="/dashboard" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">dashboard</span>
+            Dashboard
+          </NavLink>
 
-  <NavLink to="/fechamento" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">handshake</span>
-    Novo Fechamento
-  </NavLink>
+          <NavLink to="/fechamento" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">handshake</span>
+            Novo Fechamento
+          </NavLink>
 
-  <NavLink to="/cadastros" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">person_book</span>
-    Cadastros
-  </NavLink>
+          <NavLink to="/cadastros" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
+            Cadastros
+          </NavLink>
 
-  <NavLink to="/ofertas" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">campaign</span>
-    Ofertas
-  </NavLink>
+          <NavLink to="/ofertas" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </NavLink>
 
-  <NavLink to="/relatorios" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">assessment</span>
-    Relatórios
-  </NavLink>
+          <NavLink to="/relatorios" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">assessment</span>
+            Relatórios
+          </NavLink>
 
-  <NavLink to="/configuracoes" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">settings</span>
-    Configurações
-  </NavLink>
-</nav>
+          <NavLink to="/configuracoes" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">settings</span>
+            Configurações
+          </NavLink>
+        </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
@@ -498,7 +463,7 @@ export default function NovoFechamento() {
 
       {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col md:ml-72 w-full h-full">
-        {/* TopAppBar com Perfil do Usuário Logado */}
+        {/* TopAppBar */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -522,18 +487,17 @@ export default function NovoFechamento() {
                 <span className="material-symbols-outlined">settings</span>
               </button>
 
-              {/* Badge do Usuário Logado */}
               <div className="flex items-center gap-3 ml-2 cursor-pointer">
                 <div className="text-right hidden md:block">
                   <p className="text-sm font-bold text-on-surface leading-tight">
-                    {perfil.nome || 'Luís miguel Ravanello'}
+                    {perfil.nome || 'Usuário'}
                   </p>
                   <p className="text-xs text-on-surface-variant capitalize">
-                    {perfil.cargo || 'Admin'}
+                    {perfil.cargo || 'Corretor'}
                   </p>
                 </div>
                 <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
-                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                  {getIniciais(perfil.nome || 'Usuário')}
                 </div>
               </div>
             </div>
@@ -594,7 +558,7 @@ export default function NovoFechamento() {
             ) : (
               <>
                 {/* ============================================================== */}
-                {/* ABA 1: CONTRATO FECHADO (INTOCADO)                             */}
+                {/* ABA 1: CONTRATO FECHADO                                        */}
                 {/* ============================================================== */}
                 {abaAtiva === 'contrato' && (
                   <div className="max-w-5xl mx-auto space-y-6">
@@ -624,7 +588,6 @@ export default function NovoFechamento() {
                     </div>
 
                     <form onSubmit={handleSubmitContrato} className="space-y-6">
-                      {/* Section 1: Dados do Vendedor */}
                       <div className="bg-surface-bright rounded-xl p-6 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
                         <h3 className="font-headline text-xl text-primary font-bold mb-4 flex items-center">
                           <span className="material-symbols-outlined mr-2">
@@ -688,7 +651,6 @@ export default function NovoFechamento() {
                         </div>
                       </div>
 
-                      {/* Section 2: Detalhes da Venda */}
                       <div className="bg-surface-bright rounded-xl p-6 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
                         <h3 className="font-headline text-xl text-primary font-bold mb-4 flex items-center">
                           <span className="material-symbols-outlined mr-2">
@@ -822,7 +784,6 @@ export default function NovoFechamento() {
                         </div>
                       </div>
 
-                      {/* Section 3: Logística e Comprador */}
                       <div className="bg-surface-bright rounded-xl p-6 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
                         <h3 className="font-headline text-xl text-primary font-bold mb-4 flex items-center">
                           <span className="material-symbols-outlined mr-2">
@@ -893,7 +854,6 @@ export default function NovoFechamento() {
                         </div>
                       </div>
 
-                      {/* Section 4: Dados Internos */}
                       <div className="bg-surface-bright rounded-xl p-6 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/10">
                         <h3 className="font-headline text-xl text-primary font-bold mb-4 flex items-center">
                           <span className="material-symbols-outlined mr-2">
@@ -940,7 +900,6 @@ export default function NovoFechamento() {
                         </div>
                       </div>
 
-                      {/* Form Actions */}
                       <div className="flex justify-end space-x-4 pt-6 pb-12">
                         <button
                           type="button"
@@ -972,7 +931,6 @@ export default function NovoFechamento() {
                     onSubmit={handleDispararOferta}
                     className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start"
                   >
-                    {/* Left Column: Detalhes da Oferta */}
                     <div className="lg:col-span-7 bg-surface-container rounded-2xl p-8 flex flex-col shadow-sm relative overflow-hidden">
                       <div className="absolute -top-20 -right-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -993,7 +951,6 @@ export default function NovoFechamento() {
                       </div>
 
                       <div className="space-y-6 relative z-10 pr-1 pb-2">
-                        {/* Produtor e Fazenda */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -1053,7 +1010,6 @@ export default function NovoFechamento() {
                           </div>
                         </div>
 
-                        {/* Commodity e Unidade de Medida */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -1094,7 +1050,6 @@ export default function NovoFechamento() {
                           </div>
                         </div>
 
-                        {/* Volume e Preço */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="flex flex-col gap-2">
                             <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -1107,7 +1062,7 @@ export default function NovoFechamento() {
                                 placeholder="0"
                                 value={volumeOferta}
                                 onChange={(e) => setVolumeOferta(e.target.value)}
-                                className="w-full bg-transparent border-none py-3 pl-4 pr-12 text-on-surface outline-none font-semibold text-lg text-right"
+                                className="w-full bg-transparent border-none py-3 pl-4 pr-12 text-on-surface outline-none font-semibold text-lg text-right font-mono"
                               />
                               <span className="absolute right-4 text-on-surface-variant text-sm font-semibold pointer-events-none">
                                 {tipoMedidaOferta === 'Sacas' ? 'scs' : 'ton'}
@@ -1116,11 +1071,8 @@ export default function NovoFechamento() {
                           </div>
 
                           <div className="flex flex-col gap-2 md:col-span-2">
-                            <label className="text-xs font-bold text-on-surface uppercase tracking-wider flex justify-between">
-                              <span>Preço</span>
-                              <span className="text-primary cursor-pointer hover:underline">
-                                Ver mercado atual
-                              </span>
+                            <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
+                              Preço
                             </label>
                             <div className="flex items-center bg-surface rounded-xl shadow-sm focus-within:ring-2 focus-within:ring-primary/40 transition-shadow overflow-hidden">
                               <div className="flex items-center border-r border-outline-variant/30">
@@ -1154,7 +1106,7 @@ export default function NovoFechamento() {
                                 placeholder="0.00"
                                 value={precoOferta}
                                 onChange={(e) => setPrecoOferta(e.target.value)}
-                                className="w-full bg-transparent border-none py-3 pl-4 pr-4 text-on-surface outline-none font-semibold text-lg"
+                                className="w-full bg-transparent border-none py-3 pl-4 pr-4 text-on-surface outline-none font-semibold text-lg font-mono"
                               />
                             </div>
                           </div>
@@ -1182,14 +1134,14 @@ export default function NovoFechamento() {
                               Resumo da Originação
                             </h4>
                             <p className="text-sm text-on-surface-variant mt-1 leading-relaxed">
-                              Você está preparando uma oferta para venda FOB. Certifique-se de que as condições de pagamento e especificações do grão (umidade máx 14%, impureza máx 1%) estão acordadas com o produtor.
+                              Você está preparando uma oferta para venda FOB. Certifique-se de que as condições de pagamento e especificações do grão estão acordadas com o produtor.
                             </p>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Right Column: Compradores / Pessoas Alvo */}
+                    {/* Right Column: Compradores */}
                     <div className="lg:col-span-5 bg-surface-container-high rounded-2xl flex flex-col shadow-sm overflow-hidden relative">
                       <div className="p-6 border-b border-outline-variant/10 bg-surface/50 backdrop-blur-md space-y-3">
                         <div>
@@ -1201,7 +1153,6 @@ export default function NovoFechamento() {
                           </p>
                         </div>
 
-                        {/* Dropdown Filtro por Empresa */}
                         <div className="pt-1">
                           <select
                             value={empresaFiltroId}
@@ -1217,7 +1168,6 @@ export default function NovoFechamento() {
                           </select>
                         </div>
 
-                        {/* Input Busca por Nome/Telefone */}
                         <div className="relative">
                           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">
                             search
@@ -1259,9 +1209,7 @@ export default function NovoFechamento() {
                           </div>
                         ) : (
                           destinatariosFiltrados.map((item) => {
-                            const selecionado = compradoresSelecionados.includes(
-                              item.id
-                            )
+                            const selecionado = compradoresSelecionados.includes(item.id)
                             return (
                               <label
                                 key={item.id}
@@ -1297,21 +1245,6 @@ export default function NovoFechamento() {
                           disabled={disparandoOferta}
                           className="w-full bg-primary hover:bg-surface-tint text-on-primary rounded-xl py-4 px-6 flex items-center justify-center gap-3 transition-all transform active:scale-[0.98] shadow-md hover:shadow-lg cursor-pointer disabled:opacity-50"
                         >
-                          <svg
-                            className="w-6 h-6"
-                            fill="none"
-                            height="24"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                            width="24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"></path>
-                            <path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1"></path>
-                          </svg>
                           <span className="font-bold text-[15px]">
                             {disparandoOferta
                               ? 'Disparando...'
@@ -1321,34 +1254,29 @@ export default function NovoFechamento() {
                             {compradoresSelecionados.length}
                           </span>
                         </button>
-                        <p className="text-[10px] text-center text-on-surface-variant mt-3 uppercase tracking-wider">
-                          Ação irreversível. O sistema enviará mensagens individuais.
-                        </p>
                       </div>
                     </div>
                   </form>
                 )}
 
                 {/* ============================================================== */}
-                {/* ABA 3: REGISTRAR BID / ALVO                                    */}
+                {/* ABA 3: REGISTRAR BID / ALVO (COM SELETOR DE TONELADAS)         */}
                 {/* ============================================================== */}
                 {abaAtiva === 'bid' && (
                   <div className="flex flex-col w-full min-h-full max-w-7xl mx-auto gap-6 relative">
                     <div className="flex flex-col gap-2 relative z-10 mt-2">
                       <h1 className="font-headline font-bold text-4xl text-on-surface tracking-tight">
-                        Nova Intenção de Venda
+                        Nova Intenção de Venda / BID
                       </h1>
                       <p className="text-on-surface-variant text-base max-w-xl leading-relaxed">
-                        Registre o preço alvo desejado pelo produtor. O sistema monitorará o mercado até que a condição seja atingida.
+                        Registre o preço-alvo do produtor. O lote ficará registrado silenciosamente no <span className="font-bold text-on-surface">Mural de Ofertas</span> sem disparo de WhatsApp.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
-                      {/* Left Column: Form */}
+                      {/* Form */}
                       <div className="lg:col-span-7 flex flex-col">
                         <div className="bg-surface-container-lowest rounded-xl shadow-sm p-8 lg:p-10 flex flex-col gap-8 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-full h-32 bg-gradient-to-b from-surface-container-low/50 to-transparent pointer-events-none"></div>
-
                           <form onSubmit={handleSalvarBid} className="flex flex-col gap-6 relative z-10">
                             {/* Produtor */}
                             <div className="flex flex-col gap-2">
@@ -1377,7 +1305,7 @@ export default function NovoFechamento() {
                               </div>
                             </div>
 
-                            {/* Fazenda de Origem */}
+                            {/* Fazenda */}
                             <div className="flex flex-col gap-2">
                               <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
                                 Fazenda de Origem
@@ -1396,7 +1324,7 @@ export default function NovoFechamento() {
                                       : fazendas.length === 0
                                       ? 'Nenhuma fazenda encontrada'
                                       : 'Selecione a fazenda...'}
-                                  </option>
+                                </option>
                                   {fazendas.map((f) => (
                                     <option key={f.id} value={f.id}>
                                       {f.nome}
@@ -1409,8 +1337,8 @@ export default function NovoFechamento() {
                               </div>
                             </div>
 
+                            {/* Commodity e Unidade */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              {/* Commodity */}
                               <div className="flex flex-col gap-2">
                                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
                                   Commodity
@@ -1421,8 +1349,8 @@ export default function NovoFechamento() {
                                     onChange={(e) => setCommodityBid(e.target.value)}
                                     className="w-full bg-surface-container appearance-none rounded-xl py-4 pl-5 pr-12 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all cursor-pointer"
                                   >
-                                    <option value="soja">Soja em Grãos</option>
-                                    <option value="milho">Milho em Grãos</option>
+                                    <option value="Soja">Soja em Grãos</option>
+                                    <option value="Milho">Milho em Grãos</option>
                                   </select>
                                   <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none group-focus-within:text-primary transition-colors">
                                     expand_more
@@ -1430,29 +1358,42 @@ export default function NovoFechamento() {
                                 </div>
                               </div>
 
-                              {/* Volume */}
                               <div className="flex flex-col gap-2">
                                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
-                                  Volume (Sacas)
+                                  Unidade de Medida
                                 </label>
                                 <div className="relative group">
-                                  <input
-                                    type="number"
-                                    required
-                                    placeholder="Ex: 10.000"
-                                    value={volumeBid}
-                                    onChange={(e) => setVolumeBid(e.target.value)}
-                                    className="w-full bg-surface-container rounded-xl py-4 pl-5 pr-12 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all placeholder:text-on-surface-variant/40"
-                                  />
+                                  <select
+                                    value={tipoMedidaBid}
+                                    onChange={(e) => setTipoMedidaBid(e.target.value)}
+                                    className="w-full bg-surface-container appearance-none rounded-xl py-4 pl-5 pr-12 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all cursor-pointer"
+                                  >
+                                    <option value="Sacas">Sacas (60kg)</option>
+                                    <option value="Toneladas">Toneladas (ton)</option>
+                                  </select>
                                   <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none group-focus-within:text-primary transition-colors">
-                                    inventory_2
+                                    expand_more
                                   </span>
                                 </div>
                               </div>
                             </div>
 
+                            {/* Volume e Preço Alvo */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              {/* Preço Alvo */}
+                              <div className="flex flex-col gap-2">
+                                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
+                                  Volume ({tipoMedidaBid === 'Sacas' ? 'Sacas' : 'Toneladas'})
+                                </label>
+                                <input
+                                  type="number"
+                                  required
+                                  placeholder="Ex: 10000"
+                                  value={volumeBid}
+                                  onChange={(e) => setVolumeBid(e.target.value)}
+                                  className="w-full bg-surface-container rounded-xl py-4 px-5 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all font-mono"
+                                />
+                              </div>
+
                               <div className="flex flex-col gap-2">
                                 <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
                                   Preço Alvo Desejado
@@ -1464,8 +1405,8 @@ export default function NovoFechamento() {
                                       onChange={(e) => setMoedaBid(e.target.value)}
                                       className="w-full bg-surface-container-high appearance-none rounded-xl py-4 pl-5 pr-8 text-on-surface font-bold text-base focus:ring-2 focus:ring-primary/30 outline-none cursor-pointer"
                                     >
-                                      <option value="brl">R$</option>
-                                      <option value="usd">US$</option>
+                                      <option value="BRL">R$</option>
+                                      <option value="USD">US$</option>
                                     </select>
                                     <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none group-focus-within:text-primary">
                                       expand_more
@@ -1475,43 +1416,38 @@ export default function NovoFechamento() {
                                     type="number"
                                     step="0.01"
                                     required
-                                    placeholder="0,00"
+                                    placeholder="0.00"
                                     value={precoBid}
                                     onChange={(e) => setPrecoBid(e.target.value)}
-                                    className="w-full bg-surface-container rounded-xl py-4 px-5 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all placeholder:text-on-surface-variant/40"
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Validade */}
-                              <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
-                                  Validade da Oferta
-                                </label>
-                                <div className="relative group">
-                                  <input
-                                    type="date"
-                                    required
-                                    value={validadeBid}
-                                    onChange={(e) => setValidadeBid(e.target.value)}
-                                    className="w-full bg-surface-container rounded-xl py-4 pl-5 pr-4 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all cursor-pointer"
+                                    className="w-full bg-surface-container rounded-xl py-4 px-5 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all font-mono"
                                   />
                                 </div>
                               </div>
                             </div>
 
-                            <div className="h-px w-full bg-surface-container-highest my-2"></div>
+                            {/* Validade */}
+                            <div className="flex flex-col gap-2">
+                              <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider pl-1">
+                                Data Limite / Validade
+                              </label>
+                              <input
+                                type="date"
+                                required
+                                value={validadeBid}
+                                onChange={(e) => setValidadeBid(e.target.value)}
+                                className="w-full md:w-1/2 bg-surface-container rounded-xl py-4 px-5 text-on-surface font-semibold text-base focus:ring-2 focus:ring-primary/30 outline-none transition-all cursor-pointer"
+                              />
+                            </div>
 
-                            {/* Submit Button */}
                             <button
                               type="submit"
                               disabled={salvandoBid}
-                              className="w-full bg-primary text-on-primary hover:bg-primary/90 font-bold text-lg py-4 px-6 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 group mt-2 cursor-pointer disabled:opacity-50"
+                              className="w-full bg-primary text-on-primary hover:bg-primary/90 font-bold text-lg py-4 px-6 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 mt-4 cursor-pointer disabled:opacity-50"
                             >
-                              <span className="material-symbols-outlined group-hover:scale-110 transition-transform duration-300">
-                                save
+                              <span className="material-symbols-outlined">
+                                bookmark
                               </span>
-                              {salvandoBid ? 'Salva...' : 'Salvar BID no Painel'}
+                              {salvandoBid ? 'Salvando...' : 'Salvar no Mural de Ofertas'}
                             </button>
                           </form>
                         </div>
@@ -1519,48 +1455,20 @@ export default function NovoFechamento() {
 
                       {/* Right Column: Info Panel */}
                       <div className="lg:col-span-5 flex flex-col h-full">
-                        <div className="bg-surface-container-lowest rounded-xl shadow-sm p-10 flex flex-col items-center justify-center text-center gap-10 relative overflow-hidden h-full min-h-[400px]">
-                          <div className="absolute -top-32 -right-32 w-80 h-80 bg-tertiary/10 rounded-full blur-3xl pointer-events-none"></div>
-                          <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
-
-                          {/* Icon Visualization */}
-                          <div className="relative z-10">
-                            <div className="w-32 h-32 rounded-full bg-surface flex items-center justify-center shadow-lg relative mx-auto group">
-                              <div
-                                className="absolute inset-0 bg-tertiary/20 rounded-full animate-ping opacity-30"
-                                style={{ animationDuration: '3s' }}
-                              ></div>
-                              <div className="absolute inset-2 bg-surface-container-lowest rounded-full shadow-inner"></div>
-                              <span
-                                className="material-symbols-outlined text-6xl text-tertiary relative z-10 drop-shadow-sm transition-transform duration-500 group-hover:rotate-180"
-                                style={{ fontVariationSettings: "'FILL' 1" }}
-                              >
-                                my_location
-                              </span>
-                            </div>
-                            <div className="absolute top-0 right-0 w-3 h-3 bg-primary rounded-full shadow-sm animate-pulse"></div>
-                            <div className="absolute bottom-4 left-0 w-2 h-2 bg-secondary rounded-full shadow-sm"></div>
+                        <div className="bg-surface-container-lowest rounded-xl shadow-sm p-10 flex flex-col items-center justify-center text-center gap-8 relative overflow-hidden h-full min-h-[400px]">
+                          <div className="w-28 h-28 rounded-full bg-surface flex items-center justify-center shadow-md text-primary">
+                            <span className="material-symbols-outlined text-6xl">
+                              track_changes
+                            </span>
                           </div>
 
-                          {/* Explanatory Text */}
-                          <div className="flex flex-col gap-4 relative z-10">
+                          <div className="flex flex-col gap-3">
                             <h2 className="font-headline font-bold text-2xl text-on-surface">
-                              Monitoramento Ativo
+                              Monitoramento de Preço-Alvo
                             </h2>
-                            <p className="text-on-surface-variant text-lg leading-relaxed max-w-sm mx-auto">
-                              Ao registrar um BID, nenhuma mensagem de WhatsApp será enviada. A intenção de venda ficará salva silenciosamente no <span className="font-bold text-on-surface">Painel de BIDs</span>, aguardando o mercado atingir o preço alvo do produtor.
+                            <p className="text-on-surface-variant text-sm leading-relaxed max-w-sm mx-auto">
+                              Ao registrar este BID, o lote entrará imediatamente no <span className="font-bold text-on-surface">Mural de Ofertas</span> da corretora, pronto para a equipe cruzar com ordens de tradings quando o mercado atingir o patamar desejado.
                             </p>
-                          </div>
-
-                          {/* Status Indicator */}
-                          <div className="inline-flex items-center gap-2 bg-surface-container px-4 py-2 rounded-full mt-4">
-                            <span className="relative flex h-2.5 w-2.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
-                            </span>
-                            <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                              Sistema Operante
-                            </span>
                           </div>
                         </div>
                       </div>

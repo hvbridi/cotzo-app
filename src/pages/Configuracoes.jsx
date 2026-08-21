@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function Configuracoes() {
   const navigate = useNavigate()
+  const location = useLocation()
 
-  // Controle de Abas
-  const [abaAtiva, setAbaAtiva] = useState('geral') // 'geral' ou 'usuarios'
-
-  // Controle do Modal de Suporte
+  // Controle de Abas: 'geral' | 'usuarios' | 'lixeira'
+  const [abaAtiva, setAbaAtiva] = useState('geral')
   const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
 
-  // Estados dos Meus Dados (Perfil Logado)
+  // Perfil Logado
   const [perfil, setPerfil] = useState({
     id: null,
     nome: '',
@@ -21,20 +20,20 @@ export default function Configuracoes() {
   })
   const [carregandoPerfil, setCarregandoPerfil] = useState(true)
 
-  // Estados do Formulário de Alteração de Senha
+  // Alteração de Senha
   const [senhaAtual, setSenhaAtual] = useState('')
   const [novaSenhaPerfil, setNovaSenhaPerfil] = useState('')
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('')
   const [alterandoSenha, setAlterandoSenha] = useState(false)
 
-  // Estados do Gerenciamento de Usuários
+  // Gerenciamento de Usuários
   const [usuarios, setUsuarios] = useState([])
   const [busca, setBusca] = useState('')
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
   const [menuAbertoId, setMenuAbertoId] = useState(null)
 
-  // Campos do Modal de Novo Usuário
+  // Modal Novo Usuário
   const [novoNome, setNovoNome] = useState('')
   const [novoEmail, setNovoEmail] = useState('')
   const [novoTelefone, setNovoTelefone] = useState('')
@@ -42,7 +41,22 @@ export default function Configuracoes() {
   const [novoCargo, setNovoCargo] = useState('corretor')
   const [salvandoUsuario, setSalvandoUsuario] = useState(false)
 
-  // 1. Carrega o perfil do usuário logado
+  // -------------------------------------------------------------
+  // ESTADOS DA ABA: LIXEIRA & RESTAURAÇÃO (SOFT DELETE)
+  // -------------------------------------------------------------
+  const [categoriaLixeira, setCategoriaLixeira] = useState('fazendas') // 'fazendas' | 'produtores' | 'empresas' | 'ofertas'
+  const [itensInativos, setItensInativos] = useState([])
+  const [carregandoLixeira, setCarregandoLixeira] = useState(false)
+  const [restaurandoId, setRestaurandoId] = useState(null)
+
+  const getIniciais = (nome) => {
+    if (!nome) return 'US'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // 1. Carrega Perfil do Usuário Logado
   const carregarPerfil = async () => {
     setCarregandoPerfil(true)
     try {
@@ -55,15 +69,11 @@ export default function Configuracoes() {
 
       const token = localStorage.getItem('token')
       let emailLogado = ''
-
       if (token) {
         try {
-          const payloadBase64 = token.split('.')[1]
-          const payloadJson = JSON.parse(atob(payloadBase64))
+          const payloadJson = JSON.parse(atob(token.split('.')[1]))
           emailLogado = payloadJson.sub || ''
-        } catch (e) {
-          console.error('Erro ao ler token JWT:', e)
-        }
+        } catch (e) {}
       }
 
       const resLista = await apiFetch('/usuarios/')
@@ -72,15 +82,11 @@ export default function Configuracoes() {
         const usuarioLogado = lista.find(
           (u) => u.email.toLowerCase() === emailLogado.toLowerCase()
         )
-
-        if (usuarioLogado) {
-          setPerfil(usuarioLogado)
-        } else if (lista.length > 0) {
-          setPerfil(lista[0])
-        }
+        if (usuarioLogado) setPerfil(usuarioLogado)
+        else if (lista.length > 0) setPerfil(lista[0])
       }
     } catch (err) {
-      console.error('Erro ao buscar dados do perfil logado:', err)
+      console.error('Erro ao buscar perfil logado:', err)
     } finally {
       setCarregandoPerfil(false)
     }
@@ -90,7 +96,91 @@ export default function Configuracoes() {
     carregarPerfil()
   }, [])
 
-  // 2. Alteração de Senha
+  // 2. Carrega Usuários (Admin / Gerente)
+  const carregarUsuarios = async () => {
+    setCarregandoUsuarios(true)
+    try {
+      const resposta = await apiFetch('/usuarios/')
+      if (resposta.ok) {
+        const dados = await resposta.json()
+        setUsuarios(dados)
+      }
+    } catch (err) {
+      console.error('Erro ao buscar usuários:', err)
+    } finally {
+      setCarregandoUsuarios(false)
+    }
+  }
+
+  useEffect(() => {
+    if (abaAtiva === 'usuarios' && (perfil.cargo === 'admin' || perfil.cargo === 'gerente')) {
+      carregarUsuarios()
+    }
+  }, [abaAtiva, perfil.cargo])
+
+  // 3. Carrega Itens Inativos / Lixeira (Admin Apenas)
+  const carregarItensLixeira = async () => {
+    if (perfil.cargo !== 'admin') return
+    setCarregandoLixeira(true)
+    try {
+      // Tenta buscar da rota de inativos ou simula filtragem com fallback
+      const rota = `/${categoriaLixeira}/?inativos=true`
+      const resposta = await apiFetch(rota).catch(() => null)
+      if (resposta && resposta.ok) {
+        const dados = await resposta.json()
+        setItensInativos(Array.isArray(dados) ? dados.filter((item) => item.ativo === false) : [])
+      } else {
+        setItensInativos([])
+      }
+    } catch (err) {
+      console.error('Erro ao carregar lixeira:', err)
+      setItensInativos([])
+    } finally {
+      setCarregandoLixeira(false)
+    }
+  }
+
+  useEffect(() => {
+    if (abaAtiva === 'lixeira' && perfil.cargo === 'admin') {
+      carregarItensLixeira()
+    }
+  }, [abaAtiva, categoriaLixeira, perfil.cargo])
+
+  // 4. Restaurar Registro Inativo
+  const handleRestaurar = async (id, nomeItem) => {
+    if (perfil.cargo !== 'admin') {
+      alert('Acesso negado: Apenas administradores podem restaurar registros.')
+      return
+    }
+
+    if (!window.confirm(`Deseja reativar o registro "${nomeItem}" no sistema?`)) return
+
+    setRestaurandoId(id)
+    try {
+      const resposta = await apiFetch(`/${categoriaLixeira}/${id}/restaurar`, {
+        method: 'PUT',
+      }).catch(async () => {
+        // Fallback caso a rota seja um PUT normal de atualização
+        return await apiFetch(`/${categoriaLixeira}/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ ativo: true }),
+        })
+      })
+
+      if (!resposta.ok) {
+        throw new Error('Falha ao restaurar o registro. Verifique com o administrador do backend.')
+      }
+
+      alert(`"${nomeItem}" restaurado com sucesso! O registro voltou a ficar ativo no sistema.`)
+      carregarItensLixeira()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setRestaurandoId(null)
+    }
+  }
+
+  // Alteração de Senha
   const handleAlterarSenha = async (e) => {
     e.preventDefault()
 
@@ -105,10 +195,8 @@ export default function Configuracoes() {
     }
 
     setAlterandoSenha(true)
-
     try {
       let resposta
-
       if (perfil && perfil.id) {
         resposta = await apiFetch(`/usuarios/${perfil.id}`, {
           method: 'PUT',
@@ -134,10 +222,7 @@ export default function Configuracoes() {
 
       if (!resposta.ok) {
         const erroDados = await resposta.json().catch(() => ({}))
-        throw new Error(
-          erroDados.detail ||
-            'Não foi possível atualizar a senha no servidor. Verifique os dados.'
-        )
+        throw new Error(erroDados.detail || 'Não foi possível atualizar a senha.')
       }
 
       alert('Senha atualizada com sucesso!')
@@ -155,40 +240,12 @@ export default function Configuracoes() {
     let limpo = (num || '').replace(/\D/g, '')
     if (!limpo) throw new Error('O número de WhatsApp é obrigatório.')
     if (limpo.length === 10 || limpo.length === 11) limpo = '55' + limpo
-    if ((limpo.length !== 12 && limpo.length !== 13) || !limpo.startsWith('55')) {
-      throw new Error(
-        'Por favor, digite um número de WhatsApp válido com DDD (ex: 66 99988-7766 ou 5566999887766).'
-      )
-    }
     return limpo
   }
 
-  // Carrega lista de usuários (Apenas se for Admin ou Gerente)
-  const carregarUsuarios = async () => {
-    setCarregandoUsuarios(true)
-    try {
-      const resposta = await apiFetch('/usuarios/')
-      if (resposta.ok) {
-        const dados = await resposta.json()
-        setUsuarios(dados)
-      }
-    } catch (err) {
-      console.error('Erro ao buscar usuários:', err)
-    } finally {
-      setCarregandoUsuarios(false)
-    }
-  }
-
-  useEffect(() => {
-    if (abaAtiva === 'usuarios' && (perfil.cargo === 'admin' || perfil.cargo === 'gerente')) {
-      carregarUsuarios()
-    }
-  }, [abaAtiva, perfil.cargo])
-
-  // Cadastrar novo usuário (Corretor, Gerente ou Admin)
+  // Cadastrar Novo Usuário
   const handleCadastrarUsuario = async (e) => {
     e.preventDefault()
-
     try {
       const telefoneValidado = sanitizarTelefoneWhatsApp(novoTelefone)
       setSalvandoUsuario(true)
@@ -206,15 +263,9 @@ export default function Configuracoes() {
         body: JSON.stringify(payload),
       })
 
-      if (resposta.status === 403) {
-        throw new Error(
-          'Acesso negado: Apenas administradores podem cadastrar novos usuários.'
-        )
-      }
-
       if (!resposta.ok) {
-        const erroDados = await resposta.json()
-        throw new Error(erroDados.detail || 'Erro ao cadastrar novo usuário.')
+        const erroDados = await resposta.json().catch(() => ({}))
+        throw new Error(erroDados.detail || 'Erro ao cadastrar usuário.')
       }
 
       alert(`Novo ${novoCargo} cadastrado com sucesso!`)
@@ -233,25 +284,14 @@ export default function Configuracoes() {
   }
 
   const handleDeletarUsuario = async (id, nome) => {
-    if (!window.confirm(`Tem certeza que deseja remover o usuário "${nome}"?`))
-      return
+    if (!window.confirm(`Tem certeza que deseja remover o usuário "${nome}"?`)) return
 
     try {
-      const resposta = await apiFetch(`/usuarios/${id}`, {
-        method: 'DELETE',
-      })
-
-      if (resposta.status === 403) {
-        throw new Error(
-          'Acesso negado: Apenas administradores possuem permissão para excluir usuários.'
-        )
-      }
-
+      const resposta = await apiFetch(`/usuarios/${id}`, { method: 'DELETE' })
       if (!resposta.ok) {
-        const errData = await resposta.json()
+        const errData = await resposta.json().catch(() => ({}))
         throw new Error(errData.detail || 'Falha ao remover o usuário.')
       }
-
       alert('Usuário removido com sucesso!')
       carregarUsuarios()
     } catch (err) {
@@ -259,22 +299,15 @@ export default function Configuracoes() {
     }
   }
 
-  const getIniciais = (nome) => {
-    if (!nome) return 'US'
-    const partes = nome.trim().split(' ')
-    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
-    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-  }
-
   const usuariosFiltrados = usuarios.filter((u) => {
     const termo = busca.toLowerCase()
-    const nomeUser = (u.nome || '').toLowerCase()
-    const emailUser = (u.email || '').toLowerCase()
-    const cargoUser = (u.cargo || '').toLowerCase()
-    return nomeUser.includes(termo) || emailUser.includes(termo) || cargoUser.includes(termo)
+    return (
+      (u.nome || '').toLowerCase().includes(termo) ||
+      (u.email || '').toLowerCase().includes(termo) ||
+      (u.cargo || '').toLowerCase().includes(termo)
+    )
   })
 
-  // Badges de Cargo
   const renderBadgeCargo = (cargo) => {
     switch (cargo?.toLowerCase()) {
       case 'admin':
@@ -298,12 +331,23 @@ export default function Configuracoes() {
     }
   }
 
-  const getNavLinkClass = ({ isActive }) =>
-    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+  const getNavLinkClass = (path) => {
+    let isActive = false
+    if (path === '/cadastros') {
+      const subRotas = ['/cadastros', '/fazendas', '/produtores', '/empresas', '/cadastrar-fazenda', '/cadastrar-empresa', '/detalhes-fazenda', '/detalhes-empresa']
+      isActive = subRotas.some((r) => location.pathname.startsWith(r))
+    } else if (path === '/relatorios') {
+      isActive = ['/relatorios', '/detalhes-contrato'].some((r) => location.pathname.startsWith(r))
+    } else {
+      isActive = location.pathname === path
+    }
+
+    return `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
       isActive
         ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
         : 'text-on-surface-variant hover:bg-surface-variant/50'
     }`
+  }
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
@@ -312,46 +356,40 @@ export default function Configuracoes() {
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-on-primary text-xl">
-                eco
-              </span>
+              <span className="material-symbols-outlined text-on-primary text-xl">eco</span>
             </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">
-              Terra Nova
-            </h2>
+            <h2 className="font-headline text-xl font-bold text-on-surface">Terra Nova</h2>
           </div>
-          <p className="font-body text-label-md text-on-surface-variant ml-10">
-            AgroCapital
-          </p>
+          <p className="font-body text-label-md text-on-surface-variant ml-10">AgroCapital</p>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <NavLink to="/dashboard" className={getNavLinkClass}>
+          <NavLink to="/dashboard" className={() => getNavLinkClass('/dashboard')}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
           </NavLink>
 
-          <NavLink to="/fechamento" className={getNavLinkClass}>
+          <NavLink to="/fechamento" className={() => getNavLinkClass('/fechamento')}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
           </NavLink>
 
-          <NavLink to="/cadastros" className={getNavLinkClass}>
+          <NavLink to="/cadastros" className={() => getNavLinkClass('/cadastros')}>
             <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
           </NavLink>
 
-          <NavLink to="/ofertas" className={getNavLinkClass}>
+          <NavLink to="/ofertas" className={() => getNavLinkClass('/ofertas')}>
             <span className="material-symbols-outlined mr-3">campaign</span>
             Ofertas
           </NavLink>
 
-          <NavLink to="/relatorios" className={getNavLinkClass}>
+          <NavLink to="/relatorios" className={() => getNavLinkClass('/relatorios')}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
           </NavLink>
 
-          <NavLink to="/configuracoes" className={getNavLinkClass}>
+          <NavLink to="/configuracoes" className={() => getNavLinkClass('/configuracoes')}>
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
           </NavLink>
@@ -421,24 +459,22 @@ export default function Configuracoes() {
           </div>
         </header>
 
-        {/* Content Canvas Rolável */}
+        {/* Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto max-w-7xl mx-auto w-full">
           {/* Page Header */}
           <div className="mb-8 flex items-center gap-4">
-            <span className="material-symbols-outlined text-primary text-3xl">
-              settings
-            </span>
+            <span className="material-symbols-outlined text-primary text-3xl">settings</span>
             <div>
               <h2 className="text-3xl font-headline font-semibold text-on-background mb-1">
                 Configurações
               </h2>
               <p className="text-secondary text-lg">
-                Gerencie suas preferências de conta, segurança e equipe.
+                Gerencie suas preferências de conta, segurança, equipe e restauração de dados.
               </p>
             </div>
           </div>
 
-          {/* Navegação por Abas (Exibe aba de usuários para Admin e Gerente) */}
+          {/* Navegação por Abas */}
           <div className="border-b border-outline-variant/30 mb-8 flex gap-8">
             <button
               onClick={() => {
@@ -446,9 +482,7 @@ export default function Configuracoes() {
                 setMenuAbertoId(null)
               }}
               className={`pb-4 font-label text-base transition-colors relative cursor-pointer ${
-                abaAtiva === 'geral'
-                  ? 'text-primary font-bold'
-                  : 'text-on-surface-variant hover:text-primary'
+                abaAtiva === 'geral' ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'
               }`}
             >
               Geral
@@ -464,9 +498,7 @@ export default function Configuracoes() {
                   setMenuAbertoId(null)
                 }}
                 className={`pb-4 font-label text-base transition-colors relative cursor-pointer ${
-                  abaAtiva === 'usuarios'
-                    ? 'text-primary font-bold'
-                    : 'text-on-surface-variant hover:text-primary'
+                  abaAtiva === 'usuarios' ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'
                 }`}
               >
                 Gerenciar Usuários / Equipe
@@ -475,26 +507,39 @@ export default function Configuracoes() {
                 )}
               </button>
             )}
+
+            {/* ABA 3: LIXEIRA (EXCLUSIVA ADMIN) */}
+            {perfil.cargo === 'admin' && (
+              <button
+                onClick={() => {
+                  setAbaAtiva('lixeira')
+                  setMenuAbertoId(null)
+                }}
+                className={`pb-4 font-label text-base transition-colors relative cursor-pointer flex items-center gap-1.5 ${
+                  abaAtiva === 'lixeira' ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">recycling</span>
+                Lixeira & Restauração
+                {abaAtiva === 'lixeira' && (
+                  <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-primary rounded-t-full"></span>
+                )}
+              </button>
+            )}
           </div>
 
-          {/* CONTEÚDO DA ABA 1: GERAL */}
+          {/* ABA 1: GERAL */}
           {abaAtiva === 'geral' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pb-16">
               <div className="lg:col-span-8 flex flex-col gap-8">
                 {/* Seção: Meus Dados */}
-                <section className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 flex flex-col gap-6 relative overflow-hidden">
+                <section className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 flex flex-col gap-6">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-tertiary">
-                        badge
-                      </span>
-                      <h3 className="font-headline text-xl font-bold text-on-surface">
-                        Meus Dados
-                      </h3>
+                      <span className="material-symbols-outlined text-tertiary">badge</span>
+                      <h3 className="font-headline text-xl font-bold text-on-surface">Meus Dados</h3>
                     </div>
-                    <p className="text-sm text-secondary">
-                      Informações básicas da sua conta.
-                    </p>
+                    <p className="text-sm text-secondary">Informações básicas da sua conta.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
@@ -502,161 +547,106 @@ export default function Configuracoes() {
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Nome Completo
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[20px]">
-                          person
-                        </span>
-                        <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
-                          readOnly
-                          type="text"
-                          value={
-                            carregandoPerfil
-                              ? 'Buscando...'
-                              : perfil.nome || 'Não informado'
-                          }
-                        />
-                      </div>
+                      <input
+                        className="w-full bg-surface-container rounded-full py-2.5 px-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
+                        readOnly
+                        type="text"
+                        value={carregandoPerfil ? 'Buscando...' : perfil.nome || 'Não informado'}
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         E-mail de Acesso
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[20px]">
-                          mail
-                        </span>
-                        <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
-                          readOnly
-                          type="text"
-                          value={
-                            carregandoPerfil
-                              ? 'Buscando...'
-                              : perfil.email || 'Não informado'
-                          }
-                        />
-                      </div>
+                      <input
+                        className="w-full bg-surface-container rounded-full py-2.5 px-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-medium"
+                        readOnly
+                        type="text"
+                        value={carregandoPerfil ? 'Buscando...' : perfil.email || 'Não informado'}
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
-                        Celular / WhatsApp
+                        WhatsApp
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[20px]">
-                          call
-                        </span>
-                        <input
-                          className="w-full bg-surface-container rounded-full py-2.5 pl-10 pr-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-mono"
-                          readOnly
-                          type="text"
-                          value={
-                            carregandoPerfil
-                              ? 'Buscando...'
-                              : perfil.telefone || 'Não informado'
-                          }
-                        />
-                      </div>
+                      <input
+                        className="w-full bg-surface-container rounded-full py-2.5 px-4 text-sm border-none text-on-surface cursor-not-allowed opacity-80 font-mono"
+                        readOnly
+                        type="text"
+                        value={carregandoPerfil ? 'Buscando...' : perfil.telefone || 'Não informado'}
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Nível de Acesso
                       </label>
-                      <div className="pt-1.5">
-                        {renderBadgeCargo(perfil.cargo)}
-                      </div>
+                      <div className="pt-1.5">{renderBadgeCargo(perfil.cargo)}</div>
                     </div>
                   </div>
                 </section>
 
                 {/* Seção: Alterar Senha */}
-                <section className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 flex flex-col gap-6 relative overflow-hidden">
+                <section className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 flex flex-col gap-6">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary">
-                        lock
-                      </span>
-                      <h3 className="font-headline text-xl font-bold text-on-surface">
-                        Alterar Senha
-                      </h3>
+                      <span className="material-symbols-outlined text-primary">lock</span>
+                      <h3 className="font-headline text-xl font-bold text-on-surface">Alterar Senha</h3>
                     </div>
-                    <p className="text-sm text-secondary">
-                      Mantenha sua conta segura atualizando sua senha periodicamente.
-                    </p>
+                    <p className="text-sm text-secondary">Mantenha sua conta segura atualizando sua senha.</p>
                   </div>
 
-                  <form
-                    onSubmit={handleAlterarSenha}
-                    className="flex flex-col gap-5 max-w-md mt-2"
-                  >
+                  <form onSubmit={handleAlterarSenha} className="flex flex-col gap-5 max-w-md mt-2">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Senha Atual
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant text-[20px]">
-                          key
-                        </span>
-                        <input
-                          required
-                          className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                          type="password"
-                          placeholder="********"
-                          value={senhaAtual}
-                          onChange={(e) => setSenhaAtual(e.target.value)}
-                        />
-                      </div>
+                      <input
+                        required
+                        className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 px-5 text-sm font-semibold text-on-surface focus:border-primary outline-none"
+                        type="password"
+                        placeholder="********"
+                        value={senhaAtual}
+                        onChange={(e) => setSenhaAtual(e.target.value)}
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Nova Senha
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant text-[20px]">
-                          password
-                        </span>
-                        <input
-                          required
-                          className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline-variant"
-                          placeholder="Mínimo 8 caracteres"
-                          type="password"
-                          value={novaSenhaPerfil}
-                          onChange={(e) => setNovaSenhaPerfil(e.target.value)}
-                        />
-                      </div>
+                      <input
+                        required
+                        className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 px-5 text-sm font-semibold text-on-surface focus:border-primary outline-none"
+                        placeholder="Mínimo 8 caracteres"
+                        type="password"
+                        value={novaSenhaPerfil}
+                        onChange={(e) => setNovaSenhaPerfil(e.target.value)}
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Confirmar Nova Senha
                       </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant text-[20px]">
-                          password
-                        </span>
-                        <input
-                          required
-                          className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 pl-12 pr-4 text-sm font-semibold text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline-variant"
-                          placeholder="Repita a nova senha"
-                          type="password"
-                          value={confirmarNovaSenha}
-                          onChange={(e) => setConfirmarNovaSenha(e.target.value)}
-                        />
-                      </div>
+                      <input
+                        required
+                        className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-full py-2.5 px-5 text-sm font-semibold text-on-surface focus:border-primary outline-none"
+                        placeholder="Repita a nova senha"
+                        type="password"
+                        value={confirmarNovaSenha}
+                        onChange={(e) => setConfirmarNovaSenha(e.target.value)}
+                      />
                     </div>
 
                     <button
                       type="submit"
                       disabled={alterandoSenha}
-                      className="mt-4 bg-primary text-on-primary hover:bg-primary/90 disabled:opacity-50 font-bold py-2.5 px-6 rounded-full flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 w-fit cursor-pointer"
+                      className="mt-4 bg-primary text-on-primary hover:bg-primary/90 font-bold py-2.5 px-6 rounded-full flex items-center justify-center gap-2 transition-all cursor-pointer w-fit disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-[20px]">
-                        update
-                      </span>
+                      <span className="material-symbols-outlined text-[20px]">update</span>
                       {alterandoSenha ? 'Atualizando...' : 'Atualizar Senha'}
                     </button>
                   </form>
@@ -665,36 +655,19 @@ export default function Configuracoes() {
 
               {/* Sidebar Lateral de Dicas */}
               <div className="hidden lg:flex flex-col col-span-4 gap-6 sticky top-4">
-                <div className="bg-tertiary-container text-on-tertiary-container rounded-xl p-6 shadow-sm border border-tertiary/20 flex flex-col gap-4 relative overflow-hidden">
-                  <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-[120px] opacity-10">
-                    verified_user
-                  </span>
+                <div className="bg-tertiary-container text-on-tertiary-container rounded-xl p-6 shadow-sm border border-tertiary/20 flex flex-col gap-4">
                   <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-2xl">
-                      shield_locked
-                    </span>
-                    <h3 className="font-headline font-bold text-lg">
-                      Dicas de Segurança
-                    </h3>
+                    <span className="material-symbols-outlined text-2xl">shield_locked</span>
+                    <h3 className="font-headline font-bold text-lg">Dicas de Segurança</h3>
                   </div>
                   <ul className="flex flex-col gap-3 text-sm font-medium">
                     <li className="flex items-start gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">
-                        check_circle
-                      </span>
-                      Use senhas longas com mistura de letras, números e símbolos.
+                      <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">check_circle</span>
+                      Use senhas longas misturando letras, números e símbolos.
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">
-                        check_circle
-                      </span>
-                      Nunca compartilhe sua senha de acesso com terceiros.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">
-                        check_circle
-                      </span>
-                      Altere sua senha periodicamente.
+                      <span className="material-symbols-outlined text-[18px] text-tertiary mt-0.5">check_circle</span>
+                      Nunca compartilhe suas credenciais de acesso com terceiros.
                     </li>
                   </ul>
                 </div>
@@ -702,18 +675,14 @@ export default function Configuracoes() {
             </div>
           )}
 
-          {/* CONTEÚDO DA ABA 2: GERENCIAR USUÁRIOS (Admin / Gerente) */}
+          {/* ABA 2: GERENCIAR USUÁRIOS */}
           {abaAtiva === 'usuarios' && (perfil.cargo === 'admin' || perfil.cargo === 'gerente') && (
             <div className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 pb-16">
-              {/* Barra de Ferramentas */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-                {/* Campo de Busca */}
                 <div className="relative w-full sm:w-80">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
-                    search
-                  </span>
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">search</span>
                   <input
-                    className="w-full bg-surface-container rounded-full py-2 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary outline-none"
+                    className="w-full bg-surface-container rounded-full py-2 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
                     placeholder="Buscar por nome, e-mail ou cargo..."
                     type="text"
                     value={busca}
@@ -721,11 +690,10 @@ export default function Configuracoes() {
                   />
                 </div>
 
-                {/* Botão Convidar (Apenas Admin pode criar) */}
                 {perfil.cargo === 'admin' && (
                   <button
                     onClick={() => setModalAberto(true)}
-                    className="bg-primary hover:bg-primary/90 text-on-primary font-label font-medium py-2.5 px-6 rounded-full flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap cursor-pointer shadow-sm"
+                    className="bg-primary hover:bg-primary/90 text-on-primary font-medium py-2.5 px-6 rounded-full flex items-center gap-2 cursor-pointer shadow-sm"
                   >
                     <span className="material-symbols-outlined text-sm">add</span>
                     Convidar Novo Usuário
@@ -733,86 +701,50 @@ export default function Configuracoes() {
                 )}
               </div>
 
-              {/* Tabela de Usuários */}
               <div className="overflow-x-auto">
                 {carregandoUsuarios ? (
-                  <div className="p-12 text-center text-secondary">
-                    Carregando usuários do banco de dados...
-                  </div>
+                  <div className="p-12 text-center text-secondary">Carregando usuários...</div>
                 ) : usuariosFiltrados.length === 0 ? (
-                  <div className="p-12 text-center text-secondary">
-                    Nenhum usuário encontrado.
-                  </div>
+                  <div className="p-12 text-center text-secondary">Nenhum usuário encontrado.</div>
                 ) : (
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-surface-container-low text-secondary text-sm">
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                          Nome
-                        </th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                          E-mail
-                        </th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                          WhatsApp
-                        </th>
-                        <th className="py-3 px-6 font-medium border-b border-outline-variant/20">
-                          Nível de Acesso
-                        </th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Nome</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">E-mail</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">WhatsApp</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Nível</th>
                         {perfil.cargo === 'admin' && (
-                          <th className="py-3 px-6 font-medium border-b border-outline-variant/20 text-right">
-                            Ações
-                          </th>
+                          <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Ações</th>
                         )}
                       </tr>
                     </thead>
                     <tbody className="text-sm">
                       {usuariosFiltrados.map((u) => (
-                        <tr
-                          key={u.id}
-                          className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50 transition-colors"
-                        >
-                          <td className="py-4 px-6 text-on-surface">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold text-xs uppercase">
-                                {getIniciais(u.nome)}
-                              </div>
-                              <span className="font-bold text-on-surface">{u.nome}</span>
-                            </div>
-                          </td>
+                        <tr key={u.id} className="border-b border-outline-variant/10 hover:bg-surface-container-lowest/50">
+                          <td className="py-4 px-6 font-bold text-on-surface">{u.nome}</td>
                           <td className="py-4 px-6 text-secondary">{u.email}</td>
-                          <td className="py-4 px-6 text-secondary font-mono">
-                            {u.telefone || 'Não informado'}
-                          </td>
-                          <td className="py-4 px-6">
-                            {renderBadgeCargo(u.cargo)}
-                          </td>
+                          <td className="py-4 px-6 text-secondary font-mono">{u.telefone || 'Não informado'}</td>
+                          <td className="py-4 px-6">{renderBadgeCargo(u.cargo)}</td>
                           {perfil.cargo === 'admin' && (
                             <td className="py-4 px-6 text-right relative">
                               <button
-                                title="Opções de Ação"
-                                onClick={() =>
-                                  setMenuAbertoId(menuAbertoId === u.id ? null : u.id)
-                                }
-                                className="text-secondary hover:text-primary transition-colors cursor-pointer p-1.5 rounded-full hover:bg-surface-container"
+                                onClick={() => setMenuAbertoId(menuAbertoId === u.id ? null : u.id)}
+                                className="text-secondary hover:text-primary p-1.5 rounded-full hover:bg-surface-container cursor-pointer"
                               >
-                                <span className="material-symbols-outlined text-lg">
-                                  settings
-                                </span>
+                                <span className="material-symbols-outlined text-lg">settings</span>
                               </button>
 
                               {menuAbertoId === u.id && (
-                                <div className="absolute right-6 top-12 z-30 bg-surface-bright border border-outline-variant/30 rounded-xl shadow-lg p-1.5 w-44 text-left font-body">
+                                <div className="absolute right-6 top-12 z-30 bg-surface-bright border border-outline-variant/30 rounded-xl shadow-lg p-1.5 w-44 text-left">
                                   <button
                                     onClick={() => {
                                       setMenuAbertoId(null)
                                       handleDeletarUsuario(u.id, u.nome)
                                     }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-error hover:bg-error-container/30 rounded-lg transition-colors cursor-pointer"
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-error hover:bg-error-container/30 rounded-lg cursor-pointer"
                                   >
-                                    <span className="material-symbols-outlined text-sm">
-                                      delete
-                                    </span>
+                                    <span className="material-symbols-outlined text-sm">delete</span>
                                     Excluir Usuário
                                   </button>
                                 </div>
@@ -825,12 +757,94 @@ export default function Configuracoes() {
                   </table>
                 )}
               </div>
+            </div>
+          )}
 
-              {/* Contagem */}
-              <div className="mt-6 flex items-center justify-between text-sm text-secondary pt-4 border-t border-outline-variant/10">
-                <span>
-                  Mostrando {usuariosFiltrados.length} de {usuarios.length} usuários
-                </span>
+          {/* ABA 3: LIXEIRA & RESTAURAÇÃO (ADMIN APENAS) */}
+          {abaAtiva === 'lixeira' && perfil.cargo === 'admin' && (
+            <div className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/20 pb-16 space-y-6">
+              <div>
+                <h3 className="text-xl font-headline font-bold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">recycling</span>
+                  Recuperação de Registros Inativos (Soft Delete)
+                </h3>
+                <p className="text-secondary text-sm mt-1">
+                  Registros inativados não aparecem para novos negócios, mas continuam preservando o histórico financeiro. Clique em "Restaurar" para reativá-los.
+                </p>
+              </div>
+
+              {/* Seletor de Categoria na Lixeira */}
+              <div className="flex gap-2 border-b border-outline-variant/20 pb-4">
+                {[
+                  { id: 'fazendas', label: 'Fazendas', icon: 'map' },
+                  { id: 'produtores', label: 'Produtores', icon: 'agriculture' },
+                  { id: 'empresas', label: 'Empresas / Tradings', icon: 'business' },
+                  { id: 'ofertas', label: 'Ofertas & BIDs', icon: 'campaign' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoriaLixeira(cat.id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      categoriaLixeira === cat.id
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-base">{cat.icon}</span>
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tabela de Inativos */}
+              <div className="overflow-x-auto">
+                {carregandoLixeira ? (
+                  <div className="p-12 text-center text-secondary">Buscando registros inativados...</div>
+                ) : itensInativos.length === 0 ? (
+                  <div className="p-12 text-center text-secondary">
+                    <span className="material-symbols-outlined text-4xl text-outline-variant mb-2 block">
+                      check_circle
+                    </span>
+                    Nenhum registro de {categoriaLixeira} inativado no momento. Todos estão ativos!
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
+                        <th className="py-3 px-6 border-b border-outline-variant/20">ID</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Identificação</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Status</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {itensInativos.map((item) => {
+                        const nomeItem = item.nome || item.razao_social || `${item.commodity} - Lote #${item.id}`
+                        return (
+                          <tr key={item.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low/40">
+                            <td className="py-4 px-6 font-mono text-secondary">#{item.id}</td>
+                            <td className="py-4 px-6 font-bold text-on-surface">{nomeItem}</td>
+                            <td className="py-4 px-6">
+                              <span className="px-2.5 py-1 rounded-full bg-error-container text-on-error-container text-xs font-bold uppercase">
+                                Inativo
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-right">
+                              <button
+                                onClick={() => handleRestaurar(item.id, nomeItem)}
+                                disabled={restaurandoId === item.id}
+                                className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:bg-primary/90 transition-all flex items-center gap-1.5 ml-auto cursor-pointer disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-sm">restore_from_trash</span>
+                                {restaurandoId === item.id ? 'Restaurando...' : 'Restaurar'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
@@ -840,81 +854,43 @@ export default function Configuracoes() {
       {/* Modal de Suporte */}
       {modalSuporteAberto && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface-bright p-6 rounded-2xl shadow-2xl max-w-md w-full border border-outline-variant/30 animate-fade-in flex flex-col gap-5 font-body">
+          <div className="bg-surface-bright p-6 rounded-2xl shadow-2xl max-w-md w-full border border-outline-variant/30 flex flex-col gap-5">
             <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-xl">
-                    support_agent
-                  </span>
-                </div>
-                <h3 className="text-xl font-headline font-bold text-on-surface">
-                  Suporte Técnico
-                </h3>
-              </div>
-              <button
-                onClick={() => setModalSuporteAberto(false)}
-                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
-              >
+              <h3 className="text-xl font-headline font-bold text-on-surface">Suporte Técnico</h3>
+              <button onClick={() => setModalSuporteAberto(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
-
-            <p className="text-sm text-secondary">
-              Precisa de assistência ou quer deixar um feedback? Entre em contato diretamente através dos canais abaixo:
-            </p>
-
+            <p className="text-sm text-secondary">Canais diretos de contato:</p>
             <div className="flex flex-col gap-3">
-              {/* WhatsApp */}
               <a
                 href="https://wa.me/5566999590301"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border border-outline-variant/20 group hover:border-primary/40"
+                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all"
               >
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
-                  <span className="material-symbols-outlined">chat</span>
+                <span className="material-symbols-outlined text-primary">chat</span>
+                <div>
+                  <p className="text-xs font-bold uppercase text-secondary">WhatsApp</p>
+                  <p className="text-sm font-semibold text-on-surface font-mono">(66) 99959-0301</p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold uppercase text-secondary">
-                    WhatsApp
-                  </p>
-                  <p className="text-sm font-semibold text-on-surface font-mono">
-                    (66) 99959-0301
-                  </p>
-                </div>
-                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors text-sm">
-                  open_in_new
-                </span>
               </a>
-
-              {/* E-mail */}
               <a
                 href="mailto:lolravanello@gmail.com"
-                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border border-outline-variant/20 group hover:border-primary/40"
+                className="flex items-center gap-4 p-4 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all"
               >
-                <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container group-hover:scale-105 transition-transform">
-                  <span className="material-symbols-outlined">mail</span>
+                <span className="material-symbols-outlined text-secondary">mail</span>
+                <div>
+                  <p className="text-xs font-bold uppercase text-secondary">E-mail</p>
+                  <p className="text-sm font-semibold text-on-surface truncate">lolravanello@gmail.com</p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold uppercase text-secondary">
-                    E-mail
-                  </p>
-                  <p className="text-sm font-semibold text-on-surface truncate">
-                    lolravanello@gmail.com
-                  </p>
-                </div>
-                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors text-sm">
-                  open_in_new
-                </span>
               </a>
             </div>
-
             <div className="flex justify-end pt-3 border-t border-outline-variant/20">
               <button
                 type="button"
                 onClick={() => setModalSuporteAberto(false)}
-                className="px-5 py-2 rounded-xl bg-surface-container-high text-on-surface font-bold hover:bg-surface-variant cursor-pointer transition-colors text-sm"
+                className="px-5 py-2 rounded-xl bg-surface-container-high text-on-surface font-bold text-sm cursor-pointer"
               >
                 Fechar
               </button>
@@ -923,91 +899,72 @@ export default function Configuracoes() {
         </div>
       )}
 
-      {/* Modal de Convidar Novo Usuário */}
+      {/* Modal Convidar Usuário */}
       {modalAberto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-md w-full space-y-6 border border-outline-variant/30">
             <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-              <h3 className="text-xl font-headline font-bold text-on-surface">
-                Cadastrar Novo Usuário
-              </h3>
-              <button
-                onClick={() => setModalAberto(false)}
-                className="text-secondary hover:text-on-surface cursor-pointer"
-              >
+              <h3 className="text-xl font-headline font-bold text-on-surface">Cadastrar Novo Usuário</h3>
+              <button onClick={() => setModalAberto(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleCadastrarUsuario} className="space-y-4 font-body">
+            <form onSubmit={handleCadastrarUsuario} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  Nome Completo
-                </label>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">Nome Completo</label>
                 <input
                   type="text"
                   required
                   value={novoNome}
                   onChange={(e) => setNovoNome(e.target.value)}
                   placeholder="Ex: Ricardo Oliveira"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  E-mail de Acesso
-                </label>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">E-mail</label>
                 <input
                   type="email"
                   required
                   value={novoEmail}
                   onChange={(e) => setNovoEmail(e.target.value)}
                   placeholder="ricardo@terranova.com.br"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  WhatsApp / Telefone (Com DDD)
-                </label>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">WhatsApp</label>
                 <input
                   type="text"
                   required
                   value={novoTelefone}
                   onChange={(e) => setNovoTelefone(e.target.value)}
-                  placeholder="Ex: 66 99988-7766 ou 5566999887766"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  placeholder="Ex: 66 99988-7766"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
-                <p className="text-[10px] text-secondary mt-1">
-                  * O código DDI 55 será incluído automaticamente caso seja omitido.
-                </p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  Senha Inicial
-                </label>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">Senha Inicial</label>
                 <input
                   type="password"
                   required
                   value={novaSenha}
                   onChange={(e) => setNovaSenha(e.target.value)}
-                  placeholder="Senha temporária de acesso"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  placeholder="Mínimo 8 caracteres"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              {/* Nível de Acesso (com cargo Gerente adicionado) */}
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  Nível de Acesso (Cargo)
-                </label>
+                <label className="block text-xs font-bold uppercase text-secondary mb-1">Nível de Acesso</label>
                 <select
                   value={novoCargo}
                   onChange={(e) => setNovoCargo(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-primary cursor-pointer"
                 >
                   <option value="corretor">Corretor</option>
                   <option value="gerente">Gerente</option>
@@ -1019,16 +976,16 @@ export default function Configuracoes() {
                 <button
                   type="button"
                   onClick={() => setModalAberto(false)}
-                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold text-sm cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={salvandoUsuario}
-                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
                 >
-                  {salvandoUsuario ? 'Salvando...' : 'Cadastrar Usuário'}
+                  {salvandoUsuario ? 'Salvando...' : 'Cadastrar'}
                 </button>
               </div>
             </form>

@@ -5,6 +5,10 @@ import { apiFetch } from '../services/api'
 export default function Ofertas() {
   const navigate = useNavigate()
 
+  // Controle de Abas: 'mercado' | 'bids'
+  const [abaAtiva, setAbaAtiva] = useState('mercado')
+  const [busca, setBusca] = useState('')
+
   // Perfil do Usuário Logado
   const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
 
@@ -21,7 +25,7 @@ export default function Ofertas() {
   const [disparando, setDisparando] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
 
-  // Campos do Modal de Oferta
+  // Campos do Modal de Nova Oferta
   const [produtorId, setProdutorId] = useState('')
   const [fazendaId, setFazendaId] = useState('')
   const [commodity, setCommodity] = useState('Soja')
@@ -41,7 +45,6 @@ export default function Ofertas() {
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
   }
 
-  // Formatação de data (DD/MM/AAAA)
   const formatarData = (dataStr) => {
     if (!dataStr) return 'N/A'
     const dataPura = dataStr.split('T')[0]
@@ -53,11 +56,9 @@ export default function Ofertas() {
     return dataStr
   }
 
-  // 1. Carrega Perfil, Ofertas, Produtores, Compradores e Todas as Fazendas
   const carregarDadosIniciais = async () => {
     setCarregando(true)
     try {
-      // Carrega Perfil
       try {
         const resMe = await apiFetch('/usuarios/me')
         if (resMe.ok) {
@@ -74,7 +75,6 @@ export default function Ofertas() {
         }
       } catch (e) {}
 
-      // Carrega dados principais
       const [resOfertas, resProdutores, resCompradores] = await Promise.all([
         apiFetch('/ofertas/'),
         apiFetch('/produtores/'),
@@ -82,13 +82,13 @@ export default function Ofertas() {
       ])
 
       let listaProdutores = []
-      if (resProdutores.ok) {
+      if (resProdutores && resProdutores.ok) {
         listaProdutores = await resProdutores.json()
         setProdutores(listaProdutores)
         if (listaProdutores.length > 0) setProdutorId(listaProdutores[0].id)
       }
 
-      if (resOfertas.ok) {
+      if (resOfertas && resOfertas.ok) {
         setOfertas(await resOfertas.json())
       }
 
@@ -96,7 +96,6 @@ export default function Ofertas() {
         setCompradores(await resCompradores.json())
       }
 
-      // Busca as fazendas de todos os produtores para cruzar os nomes na tabela
       if (listaProdutores.length > 0) {
         const chamadasFazendas = listaProdutores.map(async (p) => {
           const resF = await apiFetch(`/produtores/${p.id}/fazendas`)
@@ -117,7 +116,6 @@ export default function Ofertas() {
     carregarDadosIniciais()
   }, [])
 
-  // 2. Busca fazendas específicas para o produtor selecionado no modal
   useEffect(() => {
     if (!produtorId) {
       setFazendasModal([])
@@ -145,7 +143,6 @@ export default function Ofertas() {
     carregarFazendasProdutor()
   }, [produtorId])
 
-  // Mapeadores de Nomes Reais
   const getNomeProdutor = (id) => {
     const p = produtores.find((item) => item.id === id)
     return p ? p.nome : `Produtor #${id}`
@@ -172,7 +169,6 @@ export default function Ofertas() {
     }
   }
 
-  // 3. Cadastrar Oferta pelo Modal
   const handleCriarOferta = async (e) => {
     e.preventDefault()
 
@@ -224,6 +220,15 @@ export default function Ofertas() {
     }
   }
 
+  // Filtragem da lista
+  const ofertasFiltradas = ofertas.filter((o) => {
+    const termo = busca.toLowerCase()
+    const nomeP = getNomeProdutor(o.produtor_id).toLowerCase()
+    const nomeF = getNomeFazenda(o.fazenda_id).toLowerCase()
+    const comm = (o.commodity || '').toLowerCase()
+    return nomeP.includes(termo) || nomeF.includes(termo) || comm.includes(termo)
+  })
+
   const getNavLinkClass = ({ isActive }) =>
     `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
       isActive
@@ -233,7 +238,7 @@ export default function Ofertas() {
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa Padronizada */}
+      {/* SideNavBar */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -302,7 +307,7 @@ export default function Ofertas() {
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <h1 className="font-headline font-bold text-lg text-on-surface">
-              Mural e Disparo de Ofertas
+              Mural de Ofertas e BIDs
             </h1>
 
             <div className="flex items-center gap-4">
@@ -314,7 +319,6 @@ export default function Ofertas() {
                 Nova Oferta
               </button>
 
-              {/* Badge do Usuário Logado */}
               <div className="flex items-center gap-3 ml-2 cursor-pointer">
                 <div className="text-right hidden md:block">
                   <p className="text-sm font-bold text-on-surface leading-tight">
@@ -334,46 +338,96 @@ export default function Ofertas() {
 
         {/* Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
-          <div className="max-w-7xl mx-auto space-y-8 pb-16">
-            <div>
-              <h2 className="text-3xl font-headline font-bold text-on-surface">
-                Ofertas Ativas no Mercado
-              </h2>
-              <p className="text-secondary text-sm mt-1">
-                Lotes de grãos originados disponíveis para negociação direta no WhatsApp.
-              </p>
+          <div className="max-w-7xl mx-auto space-y-6 pb-16">
+            {/* Pill Tabs no Topo */}
+            <div className="flex justify-center mb-2">
+              <div className="inline-flex bg-surface-container p-1.5 rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
+                <button
+                  type="button"
+                  onClick={() => setAbaAtiva('mercado')}
+                  className={`px-8 py-3 rounded-full text-sm font-bold transition-all duration-300 cursor-pointer ${
+                    abaAtiva === 'mercado'
+                      ? 'bg-primary text-on-primary shadow-md'
+                      : 'text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  Mural Geral de Ofertas
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAbaAtiva('bids')}
+                  className={`px-8 py-3 rounded-full text-sm font-bold transition-all duration-300 cursor-pointer flex items-center gap-2 ${
+                    abaAtiva === 'bids'
+                      ? 'bg-primary text-on-primary shadow-md'
+                      : 'text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    track_changes
+                  </span>
+                  Preços-Alvo / BIDs Firmes
+                </button>
+              </div>
             </div>
 
-            <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-outline-variant/20">
-                <h3 className="font-headline font-bold text-lg text-on-surface">
-                  Listagem de Lotes Ofertados
-                </h3>
+            {/* Cabeçalho da Aba */}
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h2 className="text-3xl font-headline font-bold text-on-surface">
+                  {abaAtiva === 'mercado' ? 'Ofertas Disponíveis' : 'Painel de BIDs e Preços-Alvo'}
+                </h2>
+                <p className="text-secondary text-sm mt-1">
+                  {abaAtiva === 'mercado'
+                    ? 'Lotes de grãos cadastrados para negociação com as Tradings.'
+                    : 'Intenções de venda firmes registradas para cruzamento de mercado.'}
+                </p>
               </div>
 
+              {/* Barra de Busca Rápida */}
+              <div className="relative w-full sm:w-72">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Buscar por produtor, fazenda..."
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  className="w-full bg-surface-bright border border-outline-variant/40 rounded-xl py-2 pl-9 pr-4 text-xs text-on-surface focus:ring-2 focus:ring-primary outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Tabela de Ofertas / BIDs */}
+            <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 {carregando ? (
                   <div className="p-12 text-center text-secondary">
-                    Carregando ofertas do banco de dados...
+                    Carregando dados do banco...
                   </div>
-                ) : ofertas.length === 0 ? (
+                ) : ofertasFiltradas.length === 0 ? (
                   <div className="p-12 text-center text-secondary">
-                    Nenhuma oferta cadastrada no momento. Clique em "Nova Oferta" para originar um lote.
+                    Nenhum registro encontrado. Clique em "Nova Oferta" ou "Novo Fechamento" para adicionar.
                   </div>
                 ) : (
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full text-left border-collapse font-body">
                     <thead>
                       <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
                         <th className="py-3 px-6 border-b border-outline-variant/20">Commodity</th>
                         <th className="py-3 px-6 border-b border-outline-variant/20">Produtor</th>
                         <th className="py-3 px-6 border-b border-outline-variant/20">Fazenda de Origem</th>
                         <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Volume</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Preço Ofertado</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Previsão Embarque</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">
+                          {abaAtiva === 'mercado' ? 'Preço Ofertado' : 'Preço Alvo'}
+                        </th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">
+                          {abaAtiva === 'mercado' ? 'Previsão Embarque' : 'Validade'}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {ofertas.map((o) => {
+                      {ofertasFiltradas.map((o) => {
                         const isTonelada =
                           (o.tipo_medida || '').toLowerCase() === 'toneladas'
                         const unidadeVolume = isTonelada ? 'ton' : 'sacas'
@@ -441,7 +495,6 @@ export default function Ofertas() {
             </div>
 
             <form onSubmit={handleCriarOferta} className="space-y-6">
-              {/* Seleção do Produtor e Fazenda */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
@@ -487,7 +540,6 @@ export default function Ofertas() {
                 </div>
               </div>
 
-              {/* Commodity e Unidade */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
@@ -518,7 +570,6 @@ export default function Ofertas() {
                 </div>
               </div>
 
-              {/* Volume, Preço e Moeda */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
@@ -577,7 +628,6 @@ export default function Ofertas() {
                 />
               </div>
 
-              {/* Seleção de Compradores */}
               <div className="border-t border-outline-variant/20 pt-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <div>
@@ -630,7 +680,6 @@ export default function Ofertas() {
                 </div>
               </div>
 
-              {/* Ações */}
               <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/20">
                 <button
                   type="button"

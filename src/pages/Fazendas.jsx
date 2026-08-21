@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function Fazendas() {
   const navigate = useNavigate()
+  const location = useLocation()
+
   const [busca, setBusca] = useState('')
   const [fazendas, setFazendas] = useState([])
   const [carregando, setCarregando] = useState(true)
@@ -13,7 +15,7 @@ export default function Fazendas() {
   const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
 
   const getIniciais = (nome) => {
-    if (!nome) return 'LR'
+    if (!nome) return 'US'
     const partes = nome.trim().split(' ')
     if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
@@ -53,7 +55,6 @@ export default function Fazendas() {
         if (!resProdutores.ok) throw new Error('Falha ao carregar produtores.')
         const listaProdutores = await resProdutores.json()
 
-        // Busca as fazendas de todos os produtores em paralelo
         const chamadasFazendas = listaProdutores.map(async (p) => {
           const resF = await apiFetch(`/produtores/${p.id}/fazendas`)
           if (resF.ok) {
@@ -93,6 +94,37 @@ export default function Fazendas() {
     )
   })
 
+  // Destaca a rota atual e suas subcategorias correspondentes
+  const getNavLinkClass = (path) => {
+    let isActive = false
+
+    if (path === '/cadastros') {
+      const subRotasCadastros = [
+        '/cadastros',
+        '/fazendas',
+        '/produtores',
+        '/empresas',
+        '/cadastrar-fazenda',
+        '/cadastrar-empresa',
+        '/detalhes-fazenda',
+        '/detalhes-empresa',
+      ]
+      isActive = subRotasCadastros.some((r) => location.pathname.startsWith(r))
+    } else if (path === '/relatorios') {
+      isActive = ['/relatorios', '/detalhes-contrato'].some((r) =>
+        location.pathname.startsWith(r)
+      )
+    } else {
+      isActive = location.pathname === path
+    }
+
+    return `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+  }
+
   return (
     <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in font-body">
       {/* SideNavBar */}
@@ -108,43 +140,35 @@ export default function Fazendas() {
         </div>
 
         <nav className="flex-1 space-y-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          <NavLink to="/dashboard" className={() => getNavLinkClass('/dashboard')}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/fechamento" className={() => getNavLinkClass('/fechamento')}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3" style={{ fontVariationSettings: "'FILL' 1" }}>
-              person_book
-            </span>
+          </NavLink>
+
+          <NavLink to="/cadastros" className={() => getNavLinkClass('/cadastros')}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/ofertas" className={() => getNavLinkClass('/ofertas')}>
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </NavLink>
+
+          <NavLink to="/relatorios" className={() => getNavLinkClass('/relatorios')}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
-          </Link>
-          <Link
-            to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/configuracoes" className={() => getNavLinkClass('/configuracoes')}>
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
-          </Link>
+          </NavLink>
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
