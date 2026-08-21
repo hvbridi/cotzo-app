@@ -479,7 +479,7 @@ class OfertaCreate(BaseModel):
     fazenda_id: int
     tipo_oferta: str = "Oferta"
     commodity: str = "Soja"
-    volume: int
+    volume: float
     tipo_medida: str = "Sacas"
     preco: float
     moeda: str = "BRL"
