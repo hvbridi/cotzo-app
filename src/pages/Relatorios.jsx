@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function Relatorios() {
   const navigate = useNavigate()
+
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
 
   // Dados do Banco
   const [contratos, setContratos] = useState([])
@@ -19,19 +25,65 @@ export default function Relatorios() {
   const [corretorId, setCorretorId] = useState('Todos')
   const [commodity, setCommodity] = useState('Todas')
 
-  // Carregar dados iniciais do banco
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Formatação de data segura (DD/MM/AAAA)
+  const formatarData = (dataStr) => {
+    if (!dataStr) return 'N/A'
+    const dataPura = dataStr.split('T')[0]
+    const partes = dataPura.split('-')
+    if (partes.length === 3) {
+      const [ano, mes, dia] = partes
+      return `${dia}/${mes}/${ano}`
+    }
+    return dataStr
+  }
+
+  // Carregar dados iniciais do banco e perfil
   useEffect(() => {
     async function carregarDados() {
       setCarregando(true)
       try {
+        // 1. Carrega Perfil do Usuário Logado
+        try {
+          const resMe = await apiFetch('/usuarios/me')
+          if (resMe.ok) {
+            const meData = await resMe.json()
+            setPerfil(meData)
+          } else {
+            const token = localStorage.getItem('token')
+            if (token) {
+              const payloadBase64 = token.split('.')[1]
+              const payloadJson = JSON.parse(atob(payloadBase64))
+              const emailLogado = payloadJson.sub || ''
+              const resListaU = await apiFetch('/usuarios/')
+              if (resListaU.ok) {
+                const listaU = await resListaU.json()
+                const uEncontrado = listaU.find(
+                  (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+                )
+                if (uEncontrado) setPerfil(uEncontrado)
+              }
+            }
+          }
+        } catch (errPerfil) {
+          console.error('Erro ao buscar perfil:', errPerfil)
+        }
+
+        // 2. Carrega Contratos, Produtores e Usuários (com catch seguro para Corretores)
         const [resContratos, resUsuarios, resProdutores] = await Promise.all([
           apiFetch('/contratos/'),
-          apiFetch('/usuarios/'),
+          apiFetch('/usuarios/').catch(() => ({ ok: false })),
           apiFetch('/produtores/'),
         ])
 
         if (resContratos.ok) setContratos(await resContratos.json())
-        if (resUsuarios.ok) setUsuarios(await resUsuarios.json())
+        if (resUsuarios && resUsuarios.ok) setUsuarios(await resUsuarios.json())
         if (resProdutores.ok) setProdutores(await resProdutores.json())
       } catch (err) {
         setErro('Erro ao carregar relatórios do banco de dados.')
@@ -78,7 +130,7 @@ export default function Relatorios() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'banco_de_dados_corretora.xlsx'
+      a.download = 'relatorio_corretora.xlsx'
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -89,6 +141,13 @@ export default function Relatorios() {
       setExportando(false)
     }
   }
+
+const getNavLinkClass = ({ isActive }) =>
+  `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+    isActive
+      ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+      : 'text-on-surface-variant hover:bg-surface-variant/50'
+  }`
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
@@ -110,51 +169,38 @@ export default function Relatorios() {
           </p>
         </div>
 
-        {/* Links NAVEGÁVEIS */}
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">handshake</span>
-            Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">person_book</span>
-            Cadastros
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span
-              className="material-symbols-outlined mr-3"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              assessment
-            </span>
-            Relatórios
-          </Link>
-          <Link
-            to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Configurações
-          </Link>
-        </nav>
+  <NavLink to="/dashboard" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">dashboard</span>
+    Dashboard
+  </NavLink>
 
-        {/* Rodapé da Sidebar sem o Suporte */}
+  <NavLink to="/fechamento" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">handshake</span>
+    Novo Fechamento
+  </NavLink>
+
+  <NavLink to="/cadastros" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">person_book</span>
+    Cadastros
+  </NavLink>
+
+  <NavLink to="/ofertas" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">campaign</span>
+    Ofertas
+  </NavLink>
+
+  <NavLink to="/relatorios" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">assessment</span>
+    Relatórios
+  </NavLink>
+
+  <NavLink to="/configuracoes" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">settings</span>
+    Configurações
+  </NavLink>
+</nav>
+
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
             onClick={() => {
@@ -171,7 +217,7 @@ export default function Relatorios() {
 
       {/* Main Wrapper */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        {/* TopAppBar Padronizada */}
+        {/* TopAppBar com Perfil Dinâmico */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -193,12 +239,20 @@ export default function Relatorios() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2 cursor-pointer">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+
+              {/* Badge do Usuário Logado */}
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
               </div>
             </div>
           </div>
@@ -261,11 +315,14 @@ export default function Relatorios() {
                     Corretor
                   </label>
                   <select
-                    className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3 appearance-none cursor-pointer"
+                    disabled={usuarios.length === 0}
+                    className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3 appearance-none cursor-pointer disabled:opacity-60"
                     value={corretorId}
                     onChange={(e) => setCorretorId(e.target.value)}
                   >
-                    <option value="Todos">Todos os Corretores</option>
+                    <option value="Todos">
+                      {usuarios.length === 0 ? 'Meus Contratos' : 'Todos os Corretores'}
+                    </option>
                     {usuarios.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.nome}
@@ -339,7 +396,6 @@ export default function Relatorios() {
                   <table className="w-full text-left font-body border-collapse">
                     <thead className="bg-surface-container/50 border-b border-surface-variant/50 text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
                       <tr>
-                        <th className="px-6 py-4">ID</th>
                         <th className="px-6 py-4">Data</th>
                         <th className="px-6 py-4">Corretor</th>
                         <th className="px-6 py-4">Produtor</th>
@@ -357,11 +413,8 @@ export default function Relatorios() {
                           key={c.id}
                           className="hover:bg-surface-container-low/50 transition-colors"
                         >
-                          <td className="px-6 py-4 font-mono text-secondary">
-                            #{c.id}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {c.data_fechamento}
+                          <td className="px-6 py-4 whitespace-nowrap font-medium">
+                            {formatarData(c.data_fechamento)}
                           </td>
                           <td className="px-6 py-4 font-medium whitespace-nowrap">
                             {getNomeCorretor(c.usuario_id)}
@@ -394,7 +447,7 @@ export default function Relatorios() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-secondary">
-                            {c.data_entrega || 'N/A'}
+                            {formatarData(c.data_entrega)}
                           </td>
                           <td className="px-6 py-4 text-right whitespace-nowrap">
                             <Link

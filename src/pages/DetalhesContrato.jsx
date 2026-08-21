@@ -7,6 +7,12 @@ export default function DetalhesContrato() {
   const [searchParams] = useSearchParams()
   const contratoId = searchParams.get('id')
 
+  // Perfil Dinâmico do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
+
   const [contrato, setContrato] = useState(null)
   const [produtor, setProdutor] = useState(null)
   const [fazenda, setFazenda] = useState(null)
@@ -15,8 +21,48 @@ export default function DetalhesContrato() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
 
+  const getIniciais = (nome) => {
+    if (!nome) return 'US'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
   useEffect(() => {
-    async function carregarDetalhes() {
+    async function carregarDadosIniciais() {
+      const token = localStorage.getItem('token')
+      if (token) {
+        try {
+          const payloadBase64 = token.split('.')[1]
+          const payloadJson = JSON.parse(atob(payloadBase64))
+          const emailLogado = payloadJson.sub || ''
+          const cargoLogado = payloadJson.cargo || 'corretor'
+          
+          const nomeProvisorio = emailLogado.split('@')[0]
+          const nomeFormatado = nomeProvisorio
+            ? nomeProvisorio.charAt(0).toUpperCase() + nomeProvisorio.slice(1)
+            : 'Usuário'
+
+          setPerfil({
+            nome: nomeFormatado,
+            cargo: cargoLogado,
+          })
+
+          if (cargoLogado === 'admin' || cargoLogado === 'gerente') {
+            const resListaU = await apiFetch('/usuarios/').catch(() => null)
+            if (resListaU && resListaU.ok) {
+              const listaU = await resListaU.json()
+              const uEncontrado = listaU.find(
+                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+              )
+              if (uEncontrado) setPerfil(uEncontrado)
+            }
+          }
+        } catch (e) {
+          console.error('Erro ao ler token JWT:', e)
+        }
+      }
+
       if (!contratoId) {
         setErro('ID do contrato não informado.')
         setCarregando(false)
@@ -25,13 +71,12 @@ export default function DetalhesContrato() {
 
       try {
         setCarregando(true)
-        const [resContratos, resProdutores, resFazendas, resEmpresas, resUsuarios] =
+        const [resContratos, resProdutores, resEmpresas, resUsuarios] =
           await Promise.all([
             apiFetch('/contratos/'),
             apiFetch('/produtores/'),
-            apiFetch('/produtores/1/fazendas'), // Exemplo de rota de fazendas
             apiFetch('/empresas/'),
-            apiFetch('/usuarios/'),
+            apiFetch('/usuarios/').catch(() => ({ ok: false })),
           ])
 
         if (!resContratos.ok) throw new Error('Erro ao buscar contratos.')
@@ -47,7 +92,6 @@ export default function DetalhesContrato() {
 
         setContrato(contratoEncontrado)
 
-        // Busca relacionamentos se disponíveis
         if (resProdutores.ok) {
           const listaProdutores = await resProdutores.json()
           setProdutor(listaProdutores.find((p) => p.id === contratoEncontrado.produtor_id))
@@ -58,7 +102,7 @@ export default function DetalhesContrato() {
           setEmpresa(listaEmpresas.find((e) => e.id === contratoEncontrado.empresa_id))
         }
 
-        if (resUsuarios.ok) {
+        if (resUsuarios && resUsuarios.ok) {
           const listaUsuarios = await resUsuarios.json()
           setCorretor(listaUsuarios.find((u) => u.id === contratoEncontrado.usuario_id))
         }
@@ -69,12 +113,12 @@ export default function DetalhesContrato() {
       }
     }
 
-    carregarDetalhes()
+    carregarDadosIniciais()
   }, [contratoId])
 
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Padronizada com RELATÓRIOS selecionado */}
+      {/* SideNavBar */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -115,6 +159,13 @@ export default function DetalhesContrato() {
             Cadastros
           </Link>
           <Link
+            to="/ofertas"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
+          >
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </Link>
+          <Link
             to="/relatorios"
             className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
           >
@@ -149,9 +200,9 @@ export default function DetalhesContrato() {
         </div>
       </aside>
 
-      {/* Main Content Wrapper */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        {/* TopAppBar Padronizada */}
+        {/* TopAppBar */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -173,21 +224,27 @@ export default function DetalhesContrato() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Usuário'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Corretor'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Usuário')}
+                </div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Content Canvas Rolável */}
+        {/* Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
           <div className="max-w-7xl mx-auto space-y-8 pb-16">
-            {/* Voltar e Header da Operação */}
             <div className="flex flex-col gap-4">
               <Link
                 to="/relatorios"
@@ -217,19 +274,11 @@ export default function DetalhesContrato() {
                         {contrato.status || 'Fechado'}
                       </span>
                     </div>
-
-                    <button
-                      onClick={() => navigate('/ofertas')}
-                      className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-on-primary font-bold shadow-md hover:bg-primary/90 transition-all cursor-pointer self-start lg:self-auto"
-                    >
-                      Avançar Negociação / Ofertas
-                      <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                    </button>
                   </div>
 
                   {/* Main Grid de Cards */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Card 1: Alvo da Operação */}
+                    {/* Card 1: Valores e Condições */}
                     <div className="bg-surface-bright rounded-2xl p-6 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center gap-3 mb-4">
                         <div className="w-10 h-10 rounded-xl bg-primary-container/40 flex items-center justify-center text-primary">
@@ -280,7 +329,7 @@ export default function DetalhesContrato() {
                       </div>
                     </div>
 
-                    {/* Card 2: Parte Ofertante (Produtor) */}
+                    {/* Card 2: Produtor Vendedor */}
                     <div className="bg-surface-bright rounded-2xl p-6 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
@@ -374,7 +423,7 @@ export default function DetalhesContrato() {
                       </div>
                     </div>
 
-                    {/* Card 4: Resumo Financeiro da Corretagem */}
+                    {/* Card 4: Resumo Financeiro */}
                     <div className="bg-surface-bright rounded-2xl p-6 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center gap-3 mb-6">
                         <div className="w-10 h-10 rounded-xl bg-primary-container/30 flex items-center justify-center text-primary">

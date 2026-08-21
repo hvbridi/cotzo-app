@@ -98,21 +98,21 @@ export default function Empresas() {
         <nav className="flex-1 space-y-1">
           <Link
             to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
           </Link>
           <Link
             to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
           </Link>
           <Link
             to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span
               className="material-symbols-outlined mr-3"
@@ -124,34 +124,27 @@ export default function Empresas() {
           </Link>
           <Link
             to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
           </Link>
           <Link
             to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
+            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
           >
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
           </Link>
         </nav>
 
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
+        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
             onClick={() => {
               localStorage.removeItem('token')
               navigate('/')
             }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
             Sair
@@ -162,7 +155,7 @@ export default function Empresas() {
       {/* Main Wrapper */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-72">
         {/* TopAppBar com Perfil Dinâmico */}
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
+        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
               <div className="relative w-64">
@@ -235,7 +228,6 @@ export default function Empresas() {
 
             {/* Container da Tabela e Buscas */}
             <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
-              {/* Search Bar */}
               <div className="p-6 border-b border-outline-variant/20">
                 <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                   <div className="relative w-full sm:max-w-md">
@@ -307,7 +299,6 @@ export default function Empresas() {
                             {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'N/A'}
                           </td>
                           <td className="py-4 px-6 text-right">
-                            {/* Passa o ID correto da empresa na rota */}
                             <button
                               onClick={() => navigate(`/detalhes-empresa?id=${emp.id}`)}
                               className="text-primary hover:text-primary-container font-bold text-sm transition-colors cursor-pointer"

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../services/api'
 
@@ -17,6 +17,18 @@ export default function Dashboard() {
     const partes = nome.trim().split(' ')
     if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
     return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Formatação de data segura (DD/MM/AAAA)
+  const formatarData = (dataStr) => {
+    if (!dataStr) return 'N/A'
+    const dataPura = dataStr.split('T')[0]
+    const partes = dataPura.split('-')
+    if (partes.length === 3) {
+      const [ano, mes, dia] = partes
+      return `${dia}/${mes}/${ano}`
+    }
+    return dataStr
   }
 
   useEffect(() => {
@@ -82,6 +94,14 @@ export default function Dashboard() {
     0
   )
 
+  // Função utilitária para aplicar o estilo ativo/inativo nos links de navegação
+  const getNavLinkClass = ({ isActive }) =>
+    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
       {/* SideNavBar Fixa Padronizada */}
@@ -102,43 +122,37 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">handshake</span>
-            Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">person_book</span>
-            Cadastros
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">assessment</span>
-            Relatórios
-          </Link>
-          <Link
-            to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Configurações
-          </Link>
-        </nav>
+       <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
+  <NavLink to="/dashboard" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">dashboard</span>
+    Dashboard
+  </NavLink>
+
+  <NavLink to="/fechamento" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">handshake</span>
+    Novo Fechamento
+  </NavLink>
+
+  <NavLink to="/cadastros" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">person_book</span>
+    Cadastros
+  </NavLink>
+
+  <NavLink to="/ofertas" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">campaign</span>
+    Ofertas
+  </NavLink>
+
+  <NavLink to="/relatorios" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">assessment</span>
+    Relatórios
+  </NavLink>
+
+  <NavLink to="/configuracoes" className={getNavLinkClass}>
+    <span className="material-symbols-outlined mr-3">settings</span>
+    Configurações
+  </NavLink>
+</nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
@@ -164,13 +178,13 @@ export default function Dashboard() {
             </h1>
 
             <div className="flex items-center gap-4">
-              <Link
+              <NavLink
                 to="/fechamento"
                 className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2"
               >
                 <span className="material-symbols-outlined text-sm">add</span>
                 Novo Fechamento
-              </Link>
+              </NavLink>
 
               {/* Badge do Usuário Logado */}
               <div className="flex items-center gap-3 ml-2 cursor-pointer">
@@ -193,7 +207,6 @@ export default function Dashboard() {
         {/* Content Canvas */}
         <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
           <div className="max-w-7xl mx-auto space-y-8 pb-16">
-            {/* Header */}
             <div>
               <h2 className="text-3xl font-headline font-bold text-on-surface">
                 Painel Principal
@@ -203,9 +216,8 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* CARDS DE KPIS REAIS */}
+            {/* CARDS DE KPIS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Card 1: Contratos Emitidos */}
               <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between text-secondary">
                   <span className="text-xs font-bold uppercase">Contratos Fechados</span>
@@ -218,7 +230,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Card 2: Volume Total (Sacas) */}
               <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between text-secondary">
                   <span className="text-xs font-bold uppercase">Volume Negociado</span>
@@ -231,7 +242,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Card 3: Movimentação Financeira */}
               <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between text-secondary">
                   <span className="text-xs font-bold uppercase">Valor Total do Grão</span>
@@ -244,7 +254,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Card 4: Comissão Total */}
               <div className="bg-surface-bright p-6 rounded-2xl border border-outline-variant/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between text-secondary">
                   <span className="text-xs font-bold uppercase">Comissão Gerada</span>
@@ -301,7 +310,7 @@ export default function Dashboard() {
                           className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
                         >
                           <td className="py-4 px-6 font-mono text-secondary">#{c.id}</td>
-                          <td className="py-4 px-6 text-on-surface">{c.data_fechamento}</td>
+                          <td className="py-4 px-6 text-on-surface">{formatarData(c.data_fechamento)}</td>
                           <td className="py-4 px-6 font-semibold text-on-surface">{c.commodity}</td>
                           <td className="py-4 px-6 text-secondary">{c.safra}</td>
                           <td className="py-4 px-6 font-mono text-on-surface">

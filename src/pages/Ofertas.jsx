@@ -1,26 +1,32 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function Ofertas() {
   const navigate = useNavigate()
 
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
+
   // Estados de Dados do Banco
   const [ofertas, setOfertas] = useState([])
   const [produtores, setProdutores] = useState([])
-  const [fazendas, setFazendas] = useState([])
+  const [todasFazendas, setTodasFazendas] = useState([])
+  const [fazendasModal, setFazendasModal] = useState([])
   const [compradores, setCompradores] = useState([])
 
   // Estados de Carregamento
   const [carregando, setCarregando] = useState(true)
-  const [carregandoFazendas, setCarregandoFazendas] = useState(false)
+  const [carregandoFazendasModal, setCarregandoFazendasModal] = useState(false)
   const [disparando, setDisparando] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
 
-  // Campos do Formulário de Oferta
+  // Campos do Modal de Oferta
   const [produtorId, setProdutorId] = useState('')
   const [fazendaId, setFazendaId] = useState('')
+  const [commodity, setCommodity] = useState('Soja')
   const [volume, setVolume] = useState('')
+  const [tipoMedida, setTipoMedida] = useState('Sacas')
   const [preco, setPreco] = useState('')
   const [moeda, setMoeda] = useState('BRL')
   const [dataEmbarque, setDataEmbarque] = useState(
@@ -28,23 +34,78 @@ export default function Ofertas() {
   )
   const [compradoresSelecionados, setCompradoresSelecionados] = useState([])
 
-  // 1. Carrega Ofertas, Produtores e Compradores ao abrir a página
+  const getIniciais = (nome) => {
+    if (!nome) return 'US'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Formatação de data (DD/MM/AAAA)
+  const formatarData = (dataStr) => {
+    if (!dataStr) return 'N/A'
+    const dataPura = dataStr.split('T')[0]
+    const partes = dataPura.split('-')
+    if (partes.length === 3) {
+      const [ano, mes, dia] = partes
+      return `${dia}/${mes}/${ano}`
+    }
+    return dataStr
+  }
+
+  // 1. Carrega Perfil, Ofertas, Produtores, Compradores e Todas as Fazendas
   const carregarDadosIniciais = async () => {
     setCarregando(true)
     try {
+      // Carrega Perfil
+      try {
+        const resMe = await apiFetch('/usuarios/me')
+        if (resMe.ok) {
+          setPerfil(await resMe.json())
+        } else {
+          const token = localStorage.getItem('token')
+          if (token) {
+            const payload = JSON.parse(atob(token.split('.')[1]))
+            setPerfil({
+              nome: payload.nome || payload.sub?.split('@')[0] || 'Usuário',
+              cargo: payload.cargo || 'Corretor',
+            })
+          }
+        }
+      } catch (e) {}
+
+      // Carrega dados principais
       const [resOfertas, resProdutores, resCompradores] = await Promise.all([
         apiFetch('/ofertas/'),
         apiFetch('/produtores/'),
-        apiFetch('/compradores/'),
+        apiFetch('/compradores/').catch(() => null),
       ])
 
-      if (resOfertas.ok) setOfertas(await resOfertas.json())
+      let listaProdutores = []
       if (resProdutores.ok) {
-        const dadosProd = await resProdutores.json()
-        setProdutores(dadosProd)
-        if (dadosProd.length > 0) setProdutorId(dadosProd[0].id)
+        listaProdutores = await resProdutores.json()
+        setProdutores(listaProdutores)
+        if (listaProdutores.length > 0) setProdutorId(listaProdutores[0].id)
       }
-      if (resCompradores.ok) setCompradores(await resCompradores.json())
+
+      if (resOfertas.ok) {
+        setOfertas(await resOfertas.json())
+      }
+
+      if (resCompradores && resCompradores.ok) {
+        setCompradores(await resCompradores.json())
+      }
+
+      // Busca as fazendas de todos os produtores para cruzar os nomes na tabela
+      if (listaProdutores.length > 0) {
+        const chamadasFazendas = listaProdutores.map(async (p) => {
+          const resF = await apiFetch(`/produtores/${p.id}/fazendas`)
+          if (resF.ok) return resF.json()
+          return []
+        })
+        const resultadosFazendas = await Promise.all(chamadasFazendas)
+        setTodasFazendas(resultadosFazendas.flat())
+      }
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
     } finally {
@@ -56,35 +117,45 @@ export default function Ofertas() {
     carregarDadosIniciais()
   }, [])
 
-  // 2. Busca as fazendas do produtor quando ele for alterado
+  // 2. Busca fazendas específicas para o produtor selecionado no modal
   useEffect(() => {
     if (!produtorId) {
-      setFazendas([])
+      setFazendasModal([])
       setFazendaId('')
       return
     }
 
-    async function carregarFazendas() {
-      setCarregandoFazendas(true)
+    async function carregarFazendasProdutor() {
+      setCarregandoFazendasModal(true)
       try {
         const res = await apiFetch(`/produtores/${produtorId}/fazendas`)
         if (res.ok) {
           const dados = await res.json()
-          setFazendas(dados)
+          setFazendasModal(dados)
           if (dados.length > 0) setFazendaId(dados[0].id)
           else setFazendaId('')
         }
       } catch (err) {
         console.error('Erro ao buscar fazendas:', err)
       } finally {
-        setCarregandoFazendas(false)
+        setCarregandoFazendasModal(false)
       }
     }
 
-    carregarFazendas()
+    carregarFazendasProdutor()
   }, [produtorId])
 
-  // Alternar seleção de compradores para envio do WhatsApp
+  // Mapeadores de Nomes Reais
+  const getNomeProdutor = (id) => {
+    const p = produtores.find((item) => item.id === id)
+    return p ? p.nome : `Produtor #${id}`
+  }
+
+  const getNomeFazenda = (id) => {
+    const f = todasFazendas.find((item) => item.id === id)
+    return f ? f.nome : `Fazenda #${id}`
+  }
+
   const toggleComprador = (id) => {
     if (compradoresSelecionados.includes(id)) {
       setCompradoresSelecionados(compradoresSelecionados.filter((item) => item !== id))
@@ -101,7 +172,7 @@ export default function Ofertas() {
     }
   }
 
-  // 3. Cadastrar Oferta e Disparar WhatsApp no Backend
+  // 3. Cadastrar Oferta pelo Modal
   const handleCriarOferta = async (e) => {
     e.preventDefault()
 
@@ -116,7 +187,9 @@ export default function Ofertas() {
       const payload = {
         produtor_id: Number(produtorId),
         fazenda_id: Number(fazendaId),
+        commodity: commodity,
         volume: Number(volume),
+        tipo_medida: tipoMedida,
         preco: Number(preco),
         moeda: moeda,
         data_entrega_embarque: dataEmbarque,
@@ -129,7 +202,7 @@ export default function Ofertas() {
       })
 
       if (!resposta.ok) {
-        throw new Error('Falha ao criar oferta. Verifique se seu usuário tem um telefone cadastrado.')
+        throw new Error('Falha ao criar oferta. Verifique os dados fornecidos.')
       }
 
       alert(
@@ -141,6 +214,7 @@ export default function Ofertas() {
       setModalAberto(false)
       setVolume('')
       setPreco('')
+      setTipoMedida('Sacas')
       setCompradoresSelecionados([])
       carregarDadosIniciais()
     } catch (err) {
@@ -150,9 +224,16 @@ export default function Ofertas() {
     }
   }
 
+  const getNavLinkClass = ({ isActive }) =>
+    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa */}
+      {/* SideNavBar Fixa Padronizada */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
         <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
@@ -171,34 +252,35 @@ export default function Ofertas() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          <NavLink to="/dashboard" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/fechamento" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/cadastros" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
+            Cadastros
+          </NavLink>
+
+          <NavLink to="/ofertas" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">campaign</span>
-            Mural de Ofertas
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+            Ofertas
+          </NavLink>
+
+          <NavLink to="/relatorios" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
-          </Link>
+          </NavLink>
+
+          <NavLink to="/configuracoes" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">settings</span>
+            Configurações
+          </NavLink>
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
@@ -207,7 +289,7 @@ export default function Ofertas() {
               localStorage.removeItem('token')
               navigate('/')
             }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
+            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
           >
             <span className="material-symbols-outlined mr-3">logout</span>
             Sair
@@ -222,13 +304,31 @@ export default function Ofertas() {
             <h1 className="font-headline font-bold text-lg text-on-surface">
               Mural e Disparo de Ofertas
             </h1>
-            <button
-              onClick={() => setModalAberto(true)}
-              className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-sm">add_alert</span>
-              Nova Oferta
-            </button>
+
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setModalAberto(true)}
+                className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <span className="material-symbols-outlined text-sm">add_alert</span>
+                Nova Oferta
+              </button>
+
+              {/* Badge do Usuário Logado */}
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Usuário'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Corretor'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Usuário')}
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -237,10 +337,10 @@ export default function Ofertas() {
           <div className="max-w-7xl mx-auto space-y-8 pb-16">
             <div>
               <h2 className="text-3xl font-headline font-bold text-on-surface">
-                Ofertas Ativas
+                Ofertas Ativas no Mercado
               </h2>
               <p className="text-secondary text-sm mt-1">
-                Lote de grãos disponíveis para negociação direta no WhatsApp.
+                Lotes de grãos originados disponíveis para negociação direta no WhatsApp.
               </p>
             </div>
 
@@ -254,43 +354,64 @@ export default function Ofertas() {
               <div className="overflow-x-auto">
                 {carregando ? (
                   <div className="p-12 text-center text-secondary">
-                    Carregando ofertas do servidor...
+                    Carregando ofertas do banco de dados...
                   </div>
                 ) : ofertas.length === 0 ? (
                   <div className="p-12 text-center text-secondary">
-                    Nenhuma oferta cadastrada no momento.
+                    Nenhuma oferta cadastrada no momento. Clique em "Nova Oferta" para originar um lote.
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
-                        <th className="py-3 px-6 border-b border-outline-variant/20">ID</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Volume</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Preço Ofertado</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Embarque</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">ID Produtor</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">ID Fazenda</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Commodity</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Produtor</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Fazenda de Origem</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Volume</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Preço Ofertado</th>
+                        <th className="py-3 px-6 border-b border-outline-variant/20">Previsão Embarque</th>
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {ofertas.map((o) => (
-                        <tr
-                          key={o.id}
-                          className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
-                        >
-                          <td className="py-4 px-6 font-mono text-secondary">#{o.id}</td>
-                          <td className="py-4 px-6 font-bold text-on-surface font-mono">
-                            {Number(o.volume).toLocaleString('pt-BR')} sacas
-                          </td>
-                          <td className="py-4 px-6 font-bold text-primary font-mono">
-                            {o.moeda === 'USD' ? '$' : 'R$'}{' '}
-                            {Number(o.preco).toFixed(2)} / sc
-                          </td>
-                          <td className="py-4 px-6 text-on-surface">{o.data_entrega_embarque}</td>
-                          <td className="py-4 px-6 text-secondary font-mono">#{o.produtor_id}</td>
-                          <td className="py-4 px-6 text-secondary font-mono">#{o.fazenda_id}</td>
-                        </tr>
-                      ))}
+                      {ofertas.map((o) => {
+                        const isTonelada =
+                          (o.tipo_medida || '').toLowerCase() === 'toneladas'
+                        const unidadeVolume = isTonelada ? 'ton' : 'sacas'
+                        const unidadePreco = isTonelada ? 'ton' : 'sc'
+
+                        return (
+                          <tr
+                            key={o.id}
+                            className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
+                          >
+                            <td className="py-4 px-6 font-bold text-on-surface">
+                              {o.commodity || 'Soja'}
+                            </td>
+                            <td className="py-4 px-6 font-medium text-on-surface">
+                              {getNomeProdutor(o.produtor_id)}
+                            </td>
+                            <td className="py-4 px-6 text-on-surface">
+                              {getNomeFazenda(o.fazenda_id)}
+                            </td>
+                            <td className="py-4 px-6 font-bold text-on-surface font-mono text-right whitespace-nowrap">
+                              {Number(o.volume).toLocaleString('pt-BR')}{' '}
+                              <span className="text-xs font-normal text-secondary">
+                                {unidadeVolume}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 font-bold text-primary font-mono text-right whitespace-nowrap">
+                              {o.moeda === 'USD' ? '$' : 'R$'}{' '}
+                              {Number(o.preco).toFixed(2)}{' '}
+                              <span className="text-xs font-normal text-secondary">
+                                / {unidadePreco}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-on-surface whitespace-nowrap">
+                              {formatarData(o.data_entrega_embarque)}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -300,7 +421,7 @@ export default function Ofertas() {
         </main>
       </div>
 
-      {/* MODAL: CRIAR OFERTA E DISPARAR WHATSAPP */}
+      {/* Modal: Nova Oferta */}
       {modalAberto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-2xl w-full space-y-6 border border-outline-variant/30 max-h-[90vh] overflow-y-auto">
@@ -320,17 +441,17 @@ export default function Ofertas() {
             </div>
 
             <form onSubmit={handleCriarOferta} className="space-y-6">
-              {/* Seleção do Origem */}
+              {/* Seleção do Produtor e Fazenda */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Produtor
+                    Produtor Vendedor
                   </label>
                   <select
                     required
                     value={produtorId}
                     onChange={(e) => setProdutorId(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer"
                   >
                     {produtores.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -342,21 +463,21 @@ export default function Ofertas() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Fazenda
+                    Fazenda de Origem
                   </label>
                   <select
                     required
-                    disabled={carregandoFazendas || fazendas.length === 0}
+                    disabled={carregandoFazendasModal || fazendasModal.length === 0}
                     value={fazendaId}
                     onChange={(e) => setFazendaId(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm disabled:opacity-50"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer disabled:opacity-50"
                   >
-                    {carregandoFazendas ? (
+                    {carregandoFazendasModal ? (
                       <option>Buscando fazendas...</option>
-                    ) : fazendas.length === 0 ? (
+                    ) : fazendasModal.length === 0 ? (
                       <option>Nenhuma fazenda cadastrada</option>
                     ) : (
-                      fazendas.map((f) => (
+                      fazendasModal.map((f) => (
                         <option key={f.id} value={f.id}>
                           {f.nome}
                         </option>
@@ -366,19 +487,50 @@ export default function Ofertas() {
                 </div>
               </div>
 
-              {/* Condições comerciais */}
+              {/* Commodity e Unidade */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
+                    Commodity
+                  </label>
+                  <select
+                    value={commodity}
+                    onChange={(e) => setCommodity(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-semibold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                  >
+                    <option value="Soja">Soja em Grãos</option>
+                    <option value="Milho">Milho em Grãos</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
+                    Unidade de Medida
+                  </label>
+                  <select
+                    value={tipoMedida}
+                    onChange={(e) => setTipoMedida(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-semibold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                  >
+                    <option value="Sacas">Sacas (60kg)</option>
+                    <option value="Toneladas">Toneladas (ton)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Volume, Preço e Moeda */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Volume (Sacas)
+                    Volume ({tipoMedida === 'Sacas' ? 'Sacas' : 'Toneladas'})
                   </label>
                   <input
                     type="number"
                     required
                     value={volume}
                     onChange={(e) => setVolume(e.target.value)}
-                    placeholder="Ex: 3000"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm"
+                    placeholder="Ex: 5000"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none font-mono"
                   />
                 </div>
 
@@ -392,8 +544,8 @@ export default function Ofertas() {
                     required
                     value={preco}
                     onChange={(e) => setPreco(e.target.value)}
-                    placeholder="Ex: 120.00"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm"
+                    placeholder="Ex: 125.00"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none font-mono"
                   />
                 </div>
 
@@ -404,7 +556,7 @@ export default function Ofertas() {
                   <select
                     value={moeda}
                     onChange={(e) => setMoeda(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-bold"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-bold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
                   >
                     <option value="BRL">BRL (R$)</option>
                     <option value="USD">USD ($)</option>
@@ -421,11 +573,11 @@ export default function Ofertas() {
                   required
                   value={dataEmbarque}
                   onChange={(e) => setDataEmbarque(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm"
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
                 />
               </div>
 
-              {/* SELEÇÃO DE COMPRADORES PARA WHATSAPP */}
+              {/* Seleção de Compradores */}
               <div className="border-t border-outline-variant/20 pt-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <div>
@@ -433,7 +585,7 @@ export default function Ofertas() {
                       Enviar no WhatsApp dos Compradores?
                     </h4>
                     <p className="text-xs text-secondary">
-                      Marque quem receberá a mensagem automática via Evolution API.
+                      Marque quem receberá a mensagem automática da oferta.
                     </p>
                   </div>
                   {compradores.length > 0 && (
@@ -478,7 +630,7 @@ export default function Ofertas() {
                 </div>
               </div>
 
-              {/* AÇÕES */}
+              {/* Ações */}
               <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/20">
                 <button
                   type="button"
@@ -489,7 +641,7 @@ export default function Ofertas() {
                 </button>
                 <button
                   type="submit"
-                  disabled={disparando || fazendas.length === 0}
+                  disabled={disparando || fazendasModal.length === 0}
                   className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                 >
                   <span className="material-symbols-outlined text-sm">send</span>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function Produtores() {
@@ -8,6 +8,12 @@ export default function Produtores() {
   const [produtores, setProdutores] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+
+  // Perfil do Usuário Logado
+  const [perfil, setPerfil] = useState({
+    nome: '',
+    cargo: '',
+  })
 
   // Estados do Modal de Novo Produtor
   const [modalAberto, setModalAberto] = useState(false)
@@ -18,10 +24,44 @@ export default function Produtores() {
   const [uf, setUf] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // Carregar produtores do backend
-  const carregarProdutores = async () => {
+  const getIniciais = (nome) => {
+    if (!nome) return 'LR'
+    const partes = nome.trim().split(' ')
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  }
+
+  // Carregar perfil e produtores do backend
+  const carregarDados = async () => {
     setCarregando(true)
     try {
+      // 1. Carrega Perfil do Usuário
+      try {
+        const resMe = await apiFetch('/usuarios/me')
+        if (resMe.ok) {
+          const meData = await resMe.json()
+          setPerfil(meData)
+        } else {
+          const token = localStorage.getItem('token')
+          if (token) {
+            const payloadBase64 = token.split('.')[1]
+            const payloadJson = JSON.parse(atob(payloadBase64))
+            const emailLogado = payloadJson.sub || ''
+            const resListaU = await apiFetch('/usuarios/')
+            if (resListaU.ok) {
+              const listaU = await resListaU.json()
+              const uEncontrado = listaU.find(
+                (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
+              )
+              if (uEncontrado) setPerfil(uEncontrado)
+            }
+          }
+        }
+      } catch (errPerfil) {
+        console.error('Erro ao buscar perfil:', errPerfil)
+      }
+
+      // 2. Carrega Produtores
       const resposta = await apiFetch('/produtores/')
       if (!resposta.ok) {
         throw new Error('Falha ao buscar produtores no servidor.')
@@ -36,10 +76,10 @@ export default function Produtores() {
   }
 
   useEffect(() => {
-    carregarProdutores()
+    carregarDados()
   }, [])
 
-  // Cadastrar produtor com os campos exatos do novo modelo_tabela.py
+  // Cadastrar produtor
   const handleCadastrarProdutor = async (e) => {
     e.preventDefault()
     setSalvando(true)
@@ -67,7 +107,7 @@ export default function Produtores() {
       setCpfCnpj('')
       setCidade('')
       setUf('')
-      carregarProdutores()
+      carregarDados()
     } catch (err) {
       alert(err.message)
     } finally {
@@ -83,11 +123,18 @@ export default function Produtores() {
     return nomeProd.includes(termo) || doc.includes(termo) || zap.includes(termo)
   })
 
+  const getNavLinkClass = ({ isActive }) =>
+    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+
   return (
-    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in">
+    <div className="bg-background text-on-background antialiased min-h-screen flex animate-fade-in font-body">
       {/* SideNavBar Padronizada */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-full flex-col p-4 space-y-2 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-8 px-2 pt-4">
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
+        <div className="mb-6 px-2 pt-4 shrink-0">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-on-primary text-xl">
@@ -103,57 +150,39 @@ export default function Produtores() {
           </p>
         </div>
 
-        <nav className="flex-1 space-y-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
+        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
+          <NavLink to="/dashboard" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/fechamento" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span
-              className="material-symbols-outlined mr-3"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              person_book
-            </span>
+          </NavLink>
+
+          <NavLink to="/cadastros" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/ofertas" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </NavLink>
+
+          <NavLink to="/relatorios" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
-          </Link>
-          <Link
-            to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/configuracoes" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
-          </Link>
+          </NavLink>
         </nav>
 
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20">
-          <a
-            href="#"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3">help</span>
-            Suporte
-          </a>
+        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
           <button
             onClick={() => {
               localStorage.removeItem('token')
@@ -169,7 +198,7 @@ export default function Produtores() {
 
       {/* Main Wrapper */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-72">
-        {/* TopAppBar */}
+        {/* TopAppBar com Perfil Dinâmico */}
         <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
           <div className="flex justify-between items-center px-8 h-full w-full">
             <div className="flex-1 flex items-center">
@@ -191,12 +220,20 @@ export default function Produtores() {
               <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
                 <span className="material-symbols-outlined">settings</span>
               </button>
-              <div className="h-8 w-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/30 ml-2">
-                <img
-                  alt="Broker Profile"
-                  className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXzrG1PTr-N-g3OrjHFglv0pdMaVUaNqcXT4YEJKuTUP-PhHC8zqrduDv0ym-mQF95YcnoExcceCN2DJAmKAPimEiryjzQs8qROYF2iUZUjyWDNq9xr59Nw1N9Bz8dUexormf9qTuta0lXuZCBI9s9L5JSy10lZ2yZNJmt4JDws-paCDg6pntp308Kmq94_GWwXnYKZFJTv9pLAEoNGSI92q9zdqSdyNujc3ap7ud9rWILp-DS1VdoU6Gg2Y8cll4i2vmCxNImrkE"
-                />
+
+              {/* Badge do Usuário Logado */}
+              <div className="flex items-center gap-3 ml-2 cursor-pointer">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-bold text-on-surface leading-tight">
+                    {perfil.nome || 'Luís miguel Ravanello'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant capitalize">
+                    {perfil.cargo || 'Admin'}
+                  </p>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
+                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
+                </div>
               </div>
             </div>
           </div>

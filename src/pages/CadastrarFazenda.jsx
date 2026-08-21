@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../services/api'
 
 export default function CadastrarFazenda() {
@@ -124,6 +124,13 @@ export default function CadastrarFazenda() {
     }
   }
 
+  const getNavLinkClass = ({ isActive }) =>
+    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
+      isActive
+        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
+        : 'text-on-surface-variant hover:bg-surface-variant/50'
+    }`
+
   return (
     <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
       {/* SideNavBar Fixa */}
@@ -139,43 +146,35 @@ export default function CadastrarFazenda() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <Link
-            to="/dashboard"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          <NavLink to="/dashboard" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">dashboard</span>
             Dashboard
-          </Link>
-          <Link
-            to="/fechamento"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/fechamento" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">handshake</span>
             Novo Fechamento
-          </Link>
-          <Link
-            to="/cadastros"
-            className="flex items-center px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold text-label-lg active:scale-95 transition-transform duration-150"
-          >
-            <span className="material-symbols-outlined mr-3" style={{ fontVariationSettings: "'FILL' 1" }}>
-              person_book
-            </span>
+          </NavLink>
+
+          <NavLink to="/cadastros" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">person_book</span>
             Cadastros
-          </Link>
-          <Link
-            to="/relatorios"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/ofertas" className={getNavLinkClass}>
+            <span className="material-symbols-outlined mr-3">campaign</span>
+            Ofertas
+          </NavLink>
+
+          <NavLink to="/relatorios" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">assessment</span>
             Relatórios
-          </Link>
-          <Link
-            to="/configuracoes"
-            className="flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg text-label-lg active:scale-95 transition-transform duration-150"
-          >
+          </NavLink>
+
+          <NavLink to="/configuracoes" className={getNavLinkClass}>
             <span className="material-symbols-outlined mr-3">settings</span>
             Configurações
-          </Link>
+          </NavLink>
         </nav>
 
         <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
