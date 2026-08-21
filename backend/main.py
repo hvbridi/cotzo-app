@@ -546,11 +546,8 @@ def criar_oferta(
 
 @app.get("/ofertas/", response_model=list[Oferta], tags=["Oferta"])
 def listar_ofertas(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return session.exec(select(Oferta)).all()
+    return session.exec(select(Oferta)).all()
         
-    usuario_db = obter_usuario_db(usuario_logado, session)
-    return session.exec(select(Oferta).where(Oferta.usuario_id == usuario_db.id)).all()
 
 @app.put("/ofertas/{oferta_id}", tags=["Oferta"])
 def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
