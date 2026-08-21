@@ -71,7 +71,7 @@ class Oferta(SQLModel, table=True):
     
     # DADOS DA OFERTA
     commodity: str = Field(default="Soja", description="'Soja' ou 'Milho'")
-    volume: int = Field(description="Quantidade em sacas (ex: 5000)")
+    volume: float = Field(description="Quantidade em sacas (ex: 5000)")
     tipo_medida: str = Field(default="Sacas", description="'Sacas' ou 'Toneladas'")
     preco: float = Field(description="Preço ofertado por saca")
     moeda: str = Field(default="BRL", max_length=3, description="Moeda da negociação, ex: BRL, USD")
