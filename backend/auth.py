@@ -5,6 +5,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import os
 from dotenv import load_dotenv
+from sqlmodel import Session, select
+from database import get_session
+from modelo_tabela import Usuario
 
 load_dotenv()
 # Configurações de Segurança
@@ -35,20 +38,26 @@ def criar_token_acesso(dados: dict):
 
 # --- AS TRAVAS DE SEGURANÇA (Dependências) ---
 
-# 1. Verifica se o usuário tem um token válido
-def usuario_atual(token: str = Depends(oauth2_scheme)):
+# 1. Verifica se o usuário tem um token válido E se continua ativo no banco
+def usuario_atual(token: str = Depends(oauth2_scheme), db: Session = Depends(get_session)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        cargo: str = payload.get("cargo")
         if email is None:
-            raise HTTPException(status_code=401, detail="Token inválido")
-        return {"email": email, "cargo": cargo}
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
     except jwt.JWTError:
-        raise HTTPException(status_code=401, detail="Não autorizado")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autorizado")
+
+    usuario = db.exec(select(Usuario).where(Usuario.email == email)).first()
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário não encontrado.")
+    if not usuario.ativo:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo. Acesso revogado.")
+
+    return {"email": usuario.email, "cargo": usuario.cargo, "id": usuario.id, "nome": usuario.nome}
 
 # 2. Verifica se, além de logado, o usuário é ADMIN
 def apenas_admin(usuario=Depends(usuario_atual)):
     if usuario["cargo"] != "admin":
-        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado. Apenas administradores.")
     return usuario

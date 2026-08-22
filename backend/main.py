@@ -15,6 +15,7 @@ import secrets
 from fastapi.responses import HTMLResponse
 # Nossas tabelas
 from modelo_tabela import Usuario, Produtor, Fazenda, Empresa, Contrato, Oferta, Comprador, Historico
+from sqlalchemy.exc import IntegrityError
 # Nossas funções de segurança
 from auth import criar_token_acesso, usuario_atual, apenas_admin, obter_hash_senha, verificar_senha
 # Nossa conexão com o banco
@@ -95,6 +96,8 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
     usuario = db.exec(select(Usuario).where(Usuario.email == form_data.username)).first()
     if not usuario or not verificar_senha(form_data.password, usuario.senha_hash):
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+    if not usuario.ativo:
+        raise HTTPException(status_code=403, detail="Usuário inativo. Contate o administrador.")
     
     token = criar_token_acesso({"sub": usuario.email, "cargo": usuario.cargo})
     return {"access_token": token, "token_type": "bearer"}
@@ -106,6 +109,68 @@ class UsuarioUpdate(BaseModel):
     senha_hash: Optional[str] = None
     cargo: Optional[str] = None
     comissao_padrao: Optional[float] = None
+    ativo: Optional[bool] = None
+
+class ProdutorUpdate(BaseModel):
+    nome: Optional[str] = None
+    whatsapp: Optional[str] = None
+    cpf_cnpj: Optional[str] = None
+    cidade: Optional[str] = None
+    uf: Optional[str] = None
+
+class FazendaUpdate(BaseModel):
+    nome: Optional[str] = None
+    capacidade_carregamento: Optional[int] = None
+    comprimento_balanca: Optional[float] = None
+    telefone: Optional[str] = None
+    condicao_frete: Optional[str] = None
+    inscricao_estadual: Optional[str] = None
+    coordenadas: Optional[str] = None
+    municipio: Optional[str] = None
+    descricao_roteiro: Optional[str] = None
+    produtor_id: Optional[int] = None
+
+class EmpresaUpdate(BaseModel):
+    razao_social: Optional[str] = None
+    cnpj: Optional[str] = None
+    inscricao_estadual: Optional[str] = None
+    contato_nome: Optional[str] = None
+    telefone: Optional[str] = None
+    email: Optional[str] = None
+    endereco: Optional[str] = None
+
+class ContratoUpdate(BaseModel):
+    data_fechamento: Optional[date] = None
+    commodity: Optional[str] = None
+    safra: Optional[str] = None
+    volume: Optional[float] = None
+    tipo_medida: Optional[str] = None
+    moeda: Optional[str] = None
+    preco_unitario: Optional[float] = None
+    tipo_frete: Optional[str] = None
+    data_entrega: Optional[date] = None
+    data_pagamento: Optional[date] = None
+    numero_contrato_trading: Optional[str] = None
+    comissao_porcentagem: Optional[float] = None
+    status: Optional[str] = None
+    observacoes: Optional[str] = None
+    produtor_id: Optional[int] = None
+    fazenda_id: Optional[int] = None
+    empresa_id: Optional[int] = None
+
+class OfertaUpdate(BaseModel):
+    tipo_oferta: Optional[str] = None
+    commodity: Optional[str] = None
+    volume: Optional[float] = None
+    tipo_medida: Optional[str] = None
+    preco: Optional[float] = None
+    moeda: Optional[str] = None
+    data_entrega_embarque: Optional[date] = None
+
+class CompradorUpdate(BaseModel):
+    nome: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
 
 @app.post("/usuarios/", tags=["Usuario"])
 def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -115,8 +180,12 @@ def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_
         raise HTTPException(status_code=400, detail="Cargo inválido. Digite apenas: corretor, gerente ou admin.")
     usuario.senha_hash = obter_hash_senha(usuario.senha_hash)
     db.add(usuario)
-    db.commit()
-    db.refresh(usuario)
+    try:
+        db.commit()
+        db.refresh(usuario)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="E-mail já está em uso por outro usuário.")
     return {"msg": "Usuário criado com sucesso!", "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})}
 
 @app.get("/usuarios/", tags=["Usuario"])
@@ -124,17 +193,18 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
     # Corretor não pode ver a lista de todos os usuários
     if usuario_logado.get("cargo") == "corretor":
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    usuarios = db.exec(select(Usuario)).all()
+    usuarios = db.exec(select(Usuario).where(Usuario.ativo == True)).all()
     return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
 @app.get('/usuarios/me/', tags=["Usuario"])
 def ler_usuario_atual(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado,db)
-    if not usuario_db:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if not usuario_db or not usuario_db.ativo:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado ou inativo.")
     usuario_dict = usuario_db.model_dump()
     usuario_dict.pop('senha_hash', None)
     return usuario_dict
+
 @app.put("/usuarios/{usuario_id}", tags=["Usuario"])
 def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != "admin":
@@ -150,8 +220,12 @@ def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Ses
             setattr(usuario, key, value)
             
     db.add(usuario)
-    db.commit()
-    db.refresh(usuario)
+    try:
+        db.commit()
+        db.refresh(usuario)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="E-mail já está em uso por outro usuário.")
     return {"msg": "Usuário atualizado!", "dados": usuario.model_dump(exclude={"senha_hash"})}
 
 @app.delete("/usuarios/{usuario_id}", tags=["Usuario"])
@@ -159,10 +233,11 @@ def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario
     if usuario_logado.get('cargo') != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores excluem registros.")
     usuario = db.get(Usuario, usuario_id)
-    if not usuario: raise HTTPException(status_code=404, detail="Usuário não encontrado.")
-    db.delete(usuario)
+    if not usuario or not usuario.ativo: raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    usuario.ativo = False
+    db.add(usuario)
     db.commit()
-    return {"msg": "Usuário deletado com sucesso."}
+    return {"msg": "Usuário desativado com sucesso."}
 
 
 # ==========================================
@@ -176,45 +251,45 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
         produtor.usuario_id = usuario_db.id
         
     db.add(produtor)
-    db.commit()
-    db.refresh(produtor)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Adicionar',
-                            detalhes=f'O produtor {produtor.nome} foi adicionado')
+    db.flush()
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Produtores', id_afetado=produtor.id, acao='Adicionar',
+                    detalhes=f'O produtor {produtor.nome} foi adicionado')
     db.add(log)
     db.commit()
+    db.refresh(produtor)
     return {"msg": "Produtor criado com sucesso!", "dados": produtor}
 
 @app.get("/produtores/", tags=["Produtor"])
 def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    query = select(Produtor).where(Produtor.ativo == True)
     if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return db.exec(select(Produtor)).all()
+        return db.exec(query).all()
     
     # Se for corretor, vê apenas os clientes dele
     usuario_db = obter_usuario_db(usuario_logado, db)
-    return db.exec(select(Produtor).where(Produtor.usuario_id == usuario_db.id)).all()
+    return db.exec(query.where(Produtor.usuario_id == usuario_db.id)).all()
 
 @app.put("/produtores/{produtor_id}", tags=["Produtor"])
-def atualizar_produtor(produtor_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_produtor(produtor_id: int, dados_atualizados: ProdutorUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     produtor = db.get(Produtor, produtor_id)
-    if not produtor: raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    if not produtor or not produtor.ativo: raise HTTPException(status_code=404, detail="Produtor não encontrado.")
         
     usuario_db = obter_usuario_db(usuario_logado, db)
     if usuario_logado.get("cargo") == "corretor" and produtor.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Você só pode editar seus próprios clientes.")
 
     campos_permitidos = ['nome','whatsapp','cpf_cnpj','cidade','uf']
-    for key, value in dados_atualizados.items():
+    for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(produtor, key) and key != "id":
             if key in campos_permitidos:
                 setattr(produtor, key, value)
             
     db.add(produtor)
-    db.commit()
-    db.refresh(produtor)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Alterar',
-                                detalhes=f'O produtor {produtor.nome} foi alterado')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Produtores', id_afetado=produtor.id, acao='Alterar',
+                    detalhes=f'O produtor {produtor.nome} foi alterado')
     db.add(log)
     db.commit()
+    db.refresh(produtor)
     return produtor
 
 @app.delete("/produtores/{produtor_id}", tags=["Produtor"])
@@ -222,14 +297,15 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
     if usuario_logado.get("cargo") != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem excluir registros.")
     produtor = db.get(Produtor, produtor_id)
-    if not produtor: raise HTTPException(status_code=404)
+    if not produtor or not produtor.ativo: raise HTTPException(status_code=404, detail="Produtor não encontrado.")
     usuario_db = obter_usuario_db(usuario_logado,db)
-    db.delete(produtor)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Produtores',id_afetado=produtor.id,acao='Deletar',
-                                detalhes=f'O produtor {produtor.nome} foi deletado')
+    produtor.ativo = False
+    db.add(produtor)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Produtores', id_afetado=produtor.id, acao='Deletar',
+                    detalhes=f'O produtor {produtor.nome} foi desativado')
     db.add(log)
     db.commit()
-    return {"msg": "Produtor deletado com sucesso."}
+    return {"msg": "Produtor desativado com sucesso."}
 
 
 # ==========================================
@@ -238,58 +314,87 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
 @app.post("/fazendas/", tags=["Fazenda"])
 def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado, db)
-    if not fazenda.usuario_id or usuario_logado.get("cargo") == "corretor": 
+    
+    produtor_db = db.get(Produtor, fazenda.produtor_id)
+    if not produtor_db or not produtor_db.ativo:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado ou inativo.")
+
+    if usuario_logado.get("cargo") == "corretor":
+        if produtor_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Você só pode cadastrar fazendas para seus próprios produtores.")
         fazenda.usuario_id = usuario_db.id
+    elif not fazenda.usuario_id:
+        fazenda.usuario_id = produtor_db.usuario_id or usuario_db.id
+
     db.add(fazenda)
-    db.commit()
-    db.refresh(fazenda)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Adicionar',
+    db.flush()
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Fazendas', id_afetado=fazenda.id, acao='Adicionar',
                     detalhes=f'A fazenda {fazenda.nome} foi adicionada')
     db.add(log)
     db.commit()
+    db.refresh(fazenda)
     return {"msg": "Fazenda criada com sucesso!", "dados": fazenda}
 
 @app.get("/produtores/{produtor_id}/fazendas", tags=["Fazenda"])
 def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    fazendas = db.exec(select(Fazenda).where(Fazenda.produtor_id == produtor_id)).all()
+    produtor_db = db.get(Produtor, produtor_id)
+    if not produtor_db or not produtor_db.ativo:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and produtor_db.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Este produtor não pertence a você.")
+
+    fazendas = db.exec(select(Fazenda).where(Fazenda.produtor_id == produtor_id, Fazenda.ativo == True)).all()
     return fazendas
 
 @app.put("/fazendas/{fazenda_id}", tags=["Fazenda"])
-def atualizar_fazenda(fazenda_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_fazenda(fazenda_id: int, dados_atualizados: FazendaUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     fazenda = db.get(Fazenda, fazenda_id)
-    if not fazenda: raise HTTPException(status_code=404)
+    if not fazenda or not fazenda.ativo: raise HTTPException(status_code=404)
     
     usuario_db = obter_usuario_db(usuario_logado, db)
     if usuario_logado.get("cargo") == "corretor" and fazenda.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Permissão negada.")
-        
-    campos_permitidos = ["nome", "capacidade_carregamento", "comprimento_balanca", "telefone", "condicao_frete", "inscricao_estadual", "coordenadas", "municipio", "descricao_roteiro"]
-    for key, value in dados_atualizados.items():
+
+    dados_dict = dados_atualizados.model_dump(exclude_unset=True)
+
+    if "produtor_id" in dados_dict:
+        if dados_dict["produtor_id"] is None:
+            raise HTTPException(status_code=422, detail="produtor_id não pode ser nulo.")
+        novo_produtor = db.get(Produtor, dados_dict["produtor_id"])
+        if not novo_produtor or not novo_produtor.ativo:
+            raise HTTPException(status_code=404, detail="Produtor não encontrado ou inativo.")
+        if usuario_logado.get("cargo") == "corretor" and novo_produtor.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Você só pode vincular fazendas aos seus próprios produtores.")
+
+    campos_permitidos = ["nome", "capacidade_carregamento", "comprimento_balanca", "telefone", "condicao_frete", "inscricao_estadual", "coordenadas", "municipio", "descricao_roteiro", "produtor_id"]
+    for key, value in dados_dict.items():
         if hasattr(fazenda, key) and key in campos_permitidos:
             setattr(fazenda, key, value)
             
     db.add(fazenda)
-    db.commit()
-    db.refresh(fazenda)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Alterar',
-                        detalhes=f'A fazenda {fazenda.nome} foi alterada')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Fazendas', id_afetado=fazenda.id, acao='Alterar',
+                    detalhes=f'A fazenda {fazenda.nome} foi alterada')
     db.add(log)
     db.commit()
+    db.refresh(fazenda)
     return fazenda
 
 @app.delete("/fazendas/{fazenda_id}", tags=["Fazenda"])
 def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     fazenda = db.get(Fazenda, fazenda_id)
-    if not fazenda:
+    if not fazenda or not fazenda.ativo:
         raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
-    db.delete(fazenda)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Fazendas',id_afetado=fazenda.id,acao='Deletar',
-                        detalhes=f'A fazenda {fazenda.nome} foi deletada')
+    fazenda.ativo = False
+    db.add(fazenda)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Fazendas', id_afetado=fazenda.id, acao='Deletar',
+                    detalhes=f'A fazenda {fazenda.nome} foi desativada')
     db.add(log)
     db.commit()
-    return {"msg": "Fazenda deletada."}
+    return {"msg": "Fazenda desativada."}
 
 
 # ==========================================
@@ -301,59 +406,61 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
     if not empresa.usuario_id or usuario_logado.get("cargo") == "corretor": 
         empresa.usuario_id = usuario_db.id
     db.add(empresa)
-    db.commit()
-    db.refresh(empresa)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Adicionar',
-                        detalhes=f'A empresa {empresa.razao_social} foi adicionada')
+    db.flush()
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Empresas', id_afetado=empresa.id, acao='Adicionar',
+                    detalhes=f'A empresa {empresa.razao_social} foi adicionada')
     db.add(log)
-    db.commit()
+    try:
+        db.commit()
+        db.refresh(empresa)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="CNPJ já está cadastrado em outra empresa.")
     return {"msg": "Empresa criada com sucesso!", "dados": empresa}
 
 @app.get("/empresas/", tags=["Empresa"])
 def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return db.exec(select(Empresa)).all()
-        
-    usuario_db = obter_usuario_db(usuario_logado, db)
-    return db.exec(select(Empresa).where(Empresa.usuario_id == usuario_db.id)).all()
+    return db.exec(select(Empresa).where(Empresa.ativo == True)).all()
 
 @app.put("/empresas/{empresa_id}", tags=["Empresa"])
-def atualizar_empresa(empresa_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_empresa(empresa_id: int, dados_atualizados: EmpresaUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     empresa = db.get(Empresa, empresa_id)
-    if not empresa: raise HTTPException(status_code=404)
+    if not empresa or not empresa.ativo: raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     
     usuario_db = obter_usuario_db(usuario_logado, db)
-    if usuario_logado.get("cargo") == "corretor" and empresa.usuario_id != usuario_db.id:
-        raise HTTPException(status_code=403, detail="Você só pode editar suas próprias empresas cadastradas.")
 
     campos_permitidos = ['razao_social','cnpj','inscricao_estadual','contato_nome','telefone','email','endereco']
-    for key, value in dados_atualizados.items():
+    for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(empresa, key) and key != "id":
             if key in campos_permitidos:
                 setattr(empresa, key, value)
             
     db.add(empresa)
-    db.commit()
-    db.refresh(empresa)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Alterar',
-                            detalhes=f'A empresa {empresa.razao_social} foi alterada')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Empresas', id_afetado=empresa.id, acao='Alterar',
+                    detalhes=f'A empresa {empresa.razao_social} foi alterada')
     db.add(log)
-    db.commit()
+    try:
+        db.commit()
+        db.refresh(empresa)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="CNPJ já está cadastrado em outra empresa.")
     return empresa
 
 @app.delete("/empresas/{empresa_id}", tags=["Empresa"])
 def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     empresa = db.get(Empresa, empresa_id)
-    if not empresa:
+    if not empresa or not empresa.ativo:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
-    db.delete(empresa)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Empresas',id_afetado=empresa.id,acao='Deletar',
-                        detalhes=f'A empresa {empresa.razao_social} foi deletada')
+    empresa.ativo = False
+    db.add(empresa)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Empresas', id_afetado=empresa.id, acao='Deletar',
+                    detalhes=f'A empresa {empresa.razao_social} foi desativada')
     db.add(log)
     db.commit()
-    return {"msg": "Empresa deletada."}
+    return {"msg": "Empresa desativada."}
 
 
 # ==========================================
@@ -368,48 +475,65 @@ def criar_contrato(
 ):
     usuario_db = obter_usuario_db(usuario_logado, db)
     
-    if usuario_logado.get("cargo") == "corretor" or not contrato.usuario_id:
+    produtor_db = db.get(Produtor, contrato.produtor_id)
+    if not produtor_db or not produtor_db.ativo:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado ou inativo.")
+
+    fazenda_db = db.get(Fazenda, contrato.fazenda_id)
+    if not fazenda_db or not fazenda_db.ativo:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada ou inativa.")
+
+    empresa_db = db.get(Empresa, contrato.empresa_id)
+    if not empresa_db or not empresa_db.ativo:
+        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada ou inativa.")
+
+    if fazenda_db.produtor_id != contrato.produtor_id:
+        raise HTTPException(status_code=400, detail="A fazenda informada não pertence ao produtor selecionado.")
+
+    if usuario_logado.get("cargo") == "corretor":
+        if produtor_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Produtor não pertence a você.")
+        if fazenda_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Fazenda não pertence a você.")
+        contrato.usuario_id = usuario_db.id
+    elif not contrato.usuario_id:
         contrato.usuario_id = usuario_db.id
 
     contrato.valor_total = contrato.volume * contrato.preco_unitario
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
     
     db.add(contrato)
-    db.commit()
-    db.refresh(contrato)
+    db.flush()
     log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Adicionar', detalhes=f'O contrato de id {contrato.id} foi adicionado')
     db.add(log)
     db.commit()
-    
-    produtor = db.get(Produtor, contrato.produtor_id)
-    empresa = db.get(Empresa, contrato.empresa_id)
-    fazenda = db.get(Fazenda, contrato.fazenda_id)
+    db.refresh(contrato)
     
     nome_corretor = usuario_db.nome if usuario_db else "Corretor"
     telefone_corretor = usuario_db.telefone if usuario_db else ""
 
     # 👈 2. Disparo do Produtor em segundo plano
-    if produtor and produtor.whatsapp:
+    if produtor_db and produtor_db.whatsapp:
         msg_produtor = (
             f"🤝 *CONTRATO FECHADO COM SUCESSO!* 🤝\n\n"
-            f"Olá *{produtor.nome}*, seu negócio foi concluído!\n\n"
+            f"Olá *{produtor_db.nome}*, seu negócio foi concluído!\n\n"
             f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
             f"📦 *Volume:* {contrato.volume:,.2f} {contrato.tipo_medida.lower()}\n"
             f"💰 *Preço:* {contrato.moeda} {contrato.preco_unitario:,.2f} / {contrato.tipo_medida.lower()}\n"
-            f"🏢 *Comprador:* {empresa.razao_social if empresa else 'N/A'}\n"
+            f"🏢 *Comprador:* {empresa_db.razao_social if empresa_db else 'N/A'}\n"
             f"🚚 *Frete:* {contrato.tipo_frete}\n\n"
             f"👨‍💼 *Corretor responsável:* {nome_corretor}\n"
             f"Agradecemos a confiança e ótimos negócios!"
         )
-        background_tasks.add_task(disparar_whatsapp_comprador, produtor.whatsapp, msg_produtor)
+        background_tasks.add_task(disparar_whatsapp_comprador, produtor_db.whatsapp, msg_produtor)
 
     # 👈 3. Disparo da Empresa em segundo plano
-    if empresa and empresa.telefone:
-        fazenda_nome = fazenda.nome if fazenda else "N/A"
-        produtor_nome = produtor.nome if produtor else "N/A"
+    if empresa_db and empresa_db.telefone:
+        fazenda_nome = fazenda_db.nome if fazenda_db else "N/A"
+        produtor_nome = produtor_db.nome if produtor_db else "N/A"
         msg_empresa = (
             f"📄 *NOVO FECHAMENTO DE CONTRATO* 📄\n\n"
-            f"Olá equipe *{empresa.razao_social}*, um novo negócio foi fechado:\n\n"
+            f"Olá equipe *{empresa_db.razao_social}*, um novo negócio foi fechado:\n\n"
             f"👤 *Produtor:* {produtor_nome}\n"
             f"🚜 *Origem:* {fazenda_nome}\n"
             f"🌱 *Produto:* {contrato.commodity} ({contrato.safra})\n"
@@ -420,29 +544,64 @@ def criar_contrato(
             f"📞 *Contato do Corretor:* {telefone_corretor}\n\n"
             f"Em breve enviaremos a documentação oficial."
         )
-        background_tasks.add_task(disparar_whatsapp_comprador, empresa.telefone, msg_empresa)
+        background_tasks.add_task(disparar_whatsapp_comprador, empresa_db.telefone, msg_empresa)
         
     return {"msg": "Contrato emitido e notificações enviadas com sucesso!", "dados": contrato}
 
 @app.get("/contratos/", tags=["Contrato"])
 def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    query = select(Contrato).where(Contrato.ativo == True)
     if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return db.exec(select(Contrato)).all()
+        return db.exec(query).all()
         
     usuario_db = obter_usuario_db(usuario_logado, db)
-    return db.exec(select(Contrato).where(Contrato.usuario_id == usuario_db.id)).all()
+    return db.exec(query.where(Contrato.usuario_id == usuario_db.id)).all()
 
 @app.put("/contratos/{contrato_id}", tags=["Contrato"])
-def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_contrato(contrato_id: int, dados_atualizados: ContratoUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     contrato = db.get(Contrato, contrato_id)
-    if not contrato: raise HTTPException(status_code=404)
+    if not contrato or not contrato.ativo: raise HTTPException(status_code=404)
     
     usuario_db = obter_usuario_db(usuario_logado, db)
     if usuario_logado.get("cargo") == "corretor" and contrato.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Você só pode editar seus próprios contratos.")
 
+    dados_dict = dados_atualizados.model_dump(exclude_unset=True)
+
+    # Validação de campos não nulos
+    for key, value in dados_dict.items():
+        if value is None and key in ["volume", "preco_unitario", "comissao_porcentagem", "data_fechamento", "commodity", "safra", "tipo_medida", "moeda", "tipo_frete", "status", "produtor_id", "fazenda_id", "empresa_id"]:
+            raise HTTPException(status_code=422, detail=f"O campo {key} não pode ser nulo.")
+
+    # Validação de FKs quando alteradas
+    if "produtor_id" in dados_dict:
+        produtor_db = db.get(Produtor, dados_dict["produtor_id"])
+        if not produtor_db or not produtor_db.ativo:
+            raise HTTPException(status_code=404, detail="Produtor não encontrado ou inativo.")
+        if usuario_logado.get("cargo") == "corretor" and produtor_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Produtor não pertence a você.")
+
+    if "fazenda_id" in dados_dict:
+        fazenda_db = db.get(Fazenda, dados_dict["fazenda_id"])
+        if not fazenda_db or not fazenda_db.ativo:
+            raise HTTPException(status_code=404, detail="Fazenda não encontrada ou inativa.")
+        if usuario_logado.get("cargo") == "corretor" and fazenda_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Fazenda não pertence a você.")
+
+    if "empresa_id" in dados_dict:
+        empresa_db = db.get(Empresa, dados_dict["empresa_id"])
+        if not empresa_db or not empresa_db.ativo:
+            raise HTTPException(status_code=404, detail="Empresa compradora não encontrada ou inativa.")
+
+    # Valida consistência entre fazenda e produtor resultante
+    target_produtor_id = dados_dict.get("produtor_id", contrato.produtor_id)
+    target_fazenda_id = dados_dict.get("fazenda_id", contrato.fazenda_id)
+    fazenda_alvo = db.get(Fazenda, target_fazenda_id)
+    if fazenda_alvo and fazenda_alvo.produtor_id != target_produtor_id:
+        raise HTTPException(status_code=400, detail="A fazenda informada não pertence ao produtor.")
+
     campos_permitidos = ["data_fechamento", "commodity", "safra", "volume", "tipo_medida", "moeda", "preco_unitario", "tipo_frete", "data_entrega", "data_pagamento", "numero_contrato_trading", "comissao_porcentagem", "status", "observacoes", "produtor_id", "fazenda_id", "empresa_id"]
-    for key, value in dados_atualizados.items():
+    for key, value in dados_dict.items():
         if hasattr(contrato, key) and key in campos_permitidos:
             setattr(contrato, key, value)
             
@@ -450,27 +609,28 @@ def atualizar_contrato(contrato_id: int, dados_atualizados: dict, db: Session = 
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
             
     db.add(contrato)
-    db.commit()
-    db.refresh(contrato)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Alterar',
-                            detalhes=f'O contrato de id {contrato.id} foi alterado')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Alterar',
+                    detalhes=f'O contrato de id {contrato.id} foi alterado')
     db.add(log)
     db.commit()
+    db.refresh(contrato)
     return contrato
 
 @app.delete("/contratos/{contrato_id}", tags=["Contrato"])
 def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     contrato = db.get(Contrato, contrato_id)
-    if not contrato:
-        raise HTTPException(status_code=404, detail="Contrato não encontrada.")
+    if not contrato or not contrato.ativo:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
     usuario_db = obter_usuario_db(usuario_logado,db)
-    db.delete(contrato)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Contratos',id_afetado=contrato.id,acao='Deletar',
-                        detalhes=f'O contrato de id {contrato.id} foi deletado')
+    contrato.ativo = False
+    contrato.status = "Cancelado"
+    db.add(contrato)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Deletar',
+                    detalhes=f'O contrato de id {contrato.id} foi desativado')
     db.add(log)
     db.commit()
-    return {"msg": "Contrato deletado."}
+    return {"msg": "Contrato desativado."}
 
 
 # ==========================================
@@ -495,12 +655,26 @@ def criar_oferta(
     session: Session = Depends(get_session), 
     usuario_logado=Depends(usuario_atual)
 ):
+    produtor_db = session.get(Produtor, dados.produtor_id)
+    if not produtor_db or not produtor_db.ativo:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado ou inativo.")
+
     fazenda_db = session.get(Fazenda, dados.fazenda_id)
-    if not fazenda_db: raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
-    if fazenda_db.produtor_id != dados.produtor_id: raise HTTPException(status_code=403)
+    if not fazenda_db or not fazenda_db.ativo:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada ou inativa.")
+
+    if fazenda_db.produtor_id != dados.produtor_id:
+        raise HTTPException(status_code=400, detail="A fazenda informada não pertence ao produtor.")
         
     usuario_db = obter_usuario_db(usuario_logado, session)
-    if not usuario_db or not usuario_db.telefone: raise HTTPException(status_code=400, detail="Corretor sem telefone.")
+    if not usuario_db or not usuario_db.telefone:
+        raise HTTPException(status_code=400, detail="Corretor sem telefone.")
+
+    if usuario_logado.get("cargo") == "corretor":
+        if produtor_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Produtor não pertence a você.")
+        if fazenda_db.usuario_id != usuario_db.id:
+            raise HTTPException(status_code=403, detail="Fazenda não pertence a você.")
         
     nova_oferta = Oferta(
         usuario_id=usuario_db.id,
@@ -516,21 +690,18 @@ def criar_oferta(
     )
     
     session.add(nova_oferta)
-    session.commit()
-    session.refresh(nova_oferta)
+    session.flush()
     log = Historico(usuario_id=usuario_db.id, tabela_afetada='Ofertas', id_afetado=nova_oferta.id, acao='Adicionar', detalhes=f'A oferta de id {nova_oferta.id} foi adicionado')
     session.add(log)
     session.commit()
+    session.refresh(nova_oferta)
 
     if dados.compradores_ids:
-        # Busca segura do produtor direto pelo banco
-        produtor = session.get(Produtor, dados.produtor_id)
-        produtor_nome = produtor.nome if produtor else "Produtor"
         fazenda_nome = fazenda_db.nome
         texto_mensagem = (
             f"🌾 *NOVA OFERTA DISPONÍVEL* 🌾\n\n"
             f"🌱 *Produto:* {dados.commodity}\n"
-            f"👤 *Produtor:* {produtor_nome}\n"
+            f"👤 *Produtor:* {produtor_db.nome}\n"
             f"🚜 *Fazenda:* {fazenda_nome}\n"
             f"📦 *Volume:* {dados.volume:,} {dados.tipo_medida.lower()}\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
@@ -543,52 +714,55 @@ def criar_oferta(
         # 👈 2. Envia para a fila de segundo plano em vez de travar o loop
         for comprador_id in dados.compradores_ids:
             comprador = session.get(Comprador, comprador_id)
-            if comprador and comprador.telefone:
+            if comprador and comprador.ativo and comprador.telefone:
+                # Segurança: Se for corretor, só pode mandar msg pros seus próprios compradores
+                if usuario_logado.get("cargo") == "corretor" and comprador.usuario_id != usuario_db.id:
+                    continue
                 background_tasks.add_task(disparar_whatsapp_comprador, comprador.telefone, texto_mensagem)
 
     return nova_oferta
 
 @app.get("/ofertas/", response_model=list[Oferta], tags=["Oferta"])
 def listar_ofertas(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return session.exec(select(Oferta)).all()
+    return session.exec(select(Oferta).where(Oferta.ativo == True)).all()
         
 
 @app.put("/ofertas/{oferta_id}", tags=["Oferta"])
-def atualizar_oferta(oferta_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_oferta(oferta_id: int, dados_atualizados: OfertaUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     oferta = db.get(Oferta, oferta_id)
-    if not oferta: raise HTTPException(status_code=404)
+    if not oferta or not oferta.ativo: raise HTTPException(status_code=404)
     
     usuario_db = obter_usuario_db(usuario_logado, db)
     if usuario_logado.get("cargo") == "corretor" and oferta.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Permissão negada.")
         
     campos_permitidos = ['tipo_oferta', "commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
-    for key, value in dados_atualizados.items():
+    for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(oferta, key) and key in campos_permitidos:
             setattr(oferta, key, value)
             
     db.add(oferta)
-    db.commit()
-    db.refresh(oferta)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Alterar',
-                                detalhes=f'A oferta de id {oferta.id} foi alterada')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Ofertas', id_afetado=oferta.id, acao='Alterar',
+                    detalhes=f'A oferta de id {oferta.id} foi alterada')
     db.add(log)
     db.commit()
+    db.refresh(oferta)
     return oferta
 
 @app.delete("/ofertas/{oferta_id}", tags=["Oferta"])
 def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get("cargo") != "admin": raise HTTPException(status_code=403)
     oferta = db.get(Oferta, oferta_id)
-    if not oferta:
-        raise HTTPException(status_code=404, detail="Oferta não encontrado.")
+    if not oferta or not oferta.ativo:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
     usuario_db = obter_usuario_db(usuario_logado,db)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Ofertas',id_afetado=oferta.id,acao='Deletar',
-                            detalhes=f'A oferta de id {oferta.id} foi deletada')
-    db.delete(oferta)
+    oferta.ativo = False
+    db.add(oferta)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Ofertas', id_afetado=oferta.id, acao='Deletar',
+                    detalhes=f'A oferta de id {oferta.id} foi desativada')
     db.add(log)
     db.commit()
-    return {"msg": "Oferta deletada."}
+    return {"msg": "Oferta desativada."}
 
 # ==========================================
 # 🛒 F. COMPRADORES
@@ -596,38 +770,42 @@ def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_l
 @app.post("/compradores/", response_model=Comprador, tags=["Comprador"])
 def criar_comprador(comprador: Comprador, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado, session)
-    
-    # Atrela o comprador ao corretor que o criou
-    if not comprador.usuario_id or usuario_logado.get("cargo") == "corretor": 
-        comprador.usuario_id = usuario_db.id
-        
+
     empresa_db = session.get(Empresa, comprador.empresa_id)
-    if not empresa_db: 
-        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada.")
-        
+    if not empresa_db or not empresa_db.ativo: 
+        raise HTTPException(status_code=404, detail="Empresa compradora não encontrada ou inativa.")
+
+    if not comprador.usuario_id or usuario_logado.get("cargo") == "corretor":
+        comprador.usuario_id = usuario_db.id
+
     session.add(comprador)
-    session.commit()
-    session.refresh(comprador)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Adicionar',
-                            detalhes=f'{comprador.nome} foi adicionado como comprador')
+    session.flush()
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Compradores', id_afetado=comprador.id, acao='Adicionar',
+                    detalhes=f'{comprador.nome} foi adicionado como comprador')
     session.add(log)
-    session.commit()
+    try:
+        session.commit()
+        session.refresh(comprador)
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="E-mail já está em uso por outro comprador.")
     return comprador
 
 @app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
 def listar_compradores(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    query = select(Comprador).where(Comprador.ativo == True)
     # Gerente e Admin veem todos os contatos
     if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return session.exec(select(Comprador)).all()
+        return session.exec(query).all()
         
     # Corretor vê apenas os contatos que ele mesmo cadastrou
     usuario_db = obter_usuario_db(usuario_logado, session)
-    return session.exec(select(Comprador).where(Comprador.usuario_id == usuario_db.id)).all()
+    return session.exec(query.where(Comprador.usuario_id == usuario_db.id)).all()
 
 @app.put("/compradores/{comprador_id}", tags=["Comprador"])
-def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def atualizar_comprador(comprador_id: int, dados_atualizados: CompradorUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     comprador = db.get(Comprador, comprador_id)
-    if not comprador: 
+    if not comprador or not comprador.ativo: 
         raise HTTPException(status_code=404)
     
     usuario_db = obter_usuario_db(usuario_logado, db)
@@ -636,18 +814,21 @@ def atualizar_comprador(comprador_id: int, dados_atualizados: dict, db: Session 
         raise HTTPException(status_code=403, detail="Permissão negada. Você só pode editar seus próprios compradores.")
 
     campos_permitidos=['nome','email','telefone']
-    for key, value in dados_atualizados.items():
+    for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(comprador, key) and key != "id":
             if key in campos_permitidos:
                 setattr(comprador, key, value)
             
     db.add(comprador)
-    db.commit()
-    db.refresh(comprador)
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Alterar',
-                                detalhes=f'O comprador {comprador.nome} foi alterado')
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Compradores', id_afetado=comprador.id, acao='Alterar',
+                    detalhes=f'O comprador {comprador.nome} foi alterado')
     db.add(log)
-    db.commit()
+    try:
+        db.commit()
+        db.refresh(comprador)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="E-mail já está em uso por outro comprador.")
     return comprador
 
 @app.delete("/compradores/{comprador_id}", tags=["Comprador"])
@@ -657,14 +838,15 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
         raise HTTPException(status_code=403)
     usuario_db=obter_usuario_db(usuario_logado,db)
     comprador = db.get(Comprador, comprador_id)
-    if not comprador:
+    if not comprador or not comprador.ativo:
         raise HTTPException(status_code=404, detail="Comprador não encontrado.")
-    log = Historico(usuario_id=usuario_db.id,tabela_afetada='Compradores',id_afetado=comprador.id,acao='Deletar',
-                            detalhes=f'O comprador {comprador.nome} foi deletado')
-    db.delete(comprador)
+    comprador.ativo = False
+    db.add(comprador)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Compradores', id_afetado=comprador.id, acao='Deletar',
+                    detalhes=f'O comprador {comprador.nome} foi desativado')
     db.add(log)
     db.commit()
-    return {"msg": "Comprador deletado com sucesso."}
+    return {"msg": "Comprador desativado com sucesso."}
 
 
 # ==========================================
@@ -693,7 +875,7 @@ def exportar_dados_para_excel(
         
         # 👤 USUÁRIOS (Corretor nunca pode exportar a lista de usuários da empresa)
         if "usuarios" in tabelas_solicitadas and cargo in ["admin", "gerente"]:
-            usuarios = db.exec(select(Usuario)).all()
+            usuarios = db.exec(select(Usuario).where(Usuario.ativo == True)).all()
             df = pd.DataFrame([u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios])
             if not df.empty:
                 df.to_excel(writer, sheet_name='Usuarios', index=False)
@@ -701,7 +883,7 @@ def exportar_dados_para_excel(
 
         # 📄 CONTRATOS
         if "contratos" in tabelas_solicitadas:
-            query = select(Contrato)
+            query = select(Contrato).where(Contrato.ativo == True)
             if cargo == "corretor": query = query.where(Contrato.usuario_id == usuario_db.id)
             contratos = db.exec(query).all()
             df = pd.DataFrame([c.model_dump() for c in contratos])
@@ -711,7 +893,7 @@ def exportar_dados_para_excel(
 
         # 🌾 PRODUTORES
         if "produtores" in tabelas_solicitadas:
-            query = select(Produtor)
+            query = select(Produtor).where(Produtor.ativo == True)
             if cargo == "corretor": query = query.where(Produtor.usuario_id == usuario_db.id)
             produtores = db.exec(query).all()
             df = pd.DataFrame([p.model_dump() for p in produtores])
@@ -721,7 +903,7 @@ def exportar_dados_para_excel(
 
         # 🚜 FAZENDAS
         if "fazendas" in tabelas_solicitadas:
-            query = select(Fazenda)
+            query = select(Fazenda).where(Fazenda.ativo == True)
             if cargo == "corretor": query = query.where(Fazenda.usuario_id == usuario_db.id)
             fazendas = db.exec(query).all()
             df = pd.DataFrame([f.model_dump() for f in fazendas])
@@ -731,8 +913,7 @@ def exportar_dados_para_excel(
 
         # 🏢 EMPRESAS
         if "empresas" in tabelas_solicitadas:
-            query = select(Empresa)
-            if cargo == "corretor": query = query.where(Empresa.usuario_id == usuario_db.id)
+            query = select(Empresa).where(Empresa.ativo == True)
             empresas = db.exec(query).all()
             df = pd.DataFrame([e.model_dump() for e in empresas])
             if not df.empty:
@@ -741,7 +922,7 @@ def exportar_dados_para_excel(
                 
         # 📊 OFERTAS
         if "ofertas" in tabelas_solicitadas:
-            query = select(Oferta)
+            query = select(Oferta).where(Oferta.ativo == True)
             if cargo == "corretor": query = query.where(Oferta.usuario_id == usuario_db.id)
             ofertas = db.exec(query).all()
             df = pd.DataFrame([o.model_dump() for o in ofertas])

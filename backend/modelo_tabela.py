@@ -12,6 +12,7 @@ class Usuario(SQLModel, table=True):
     senha_hash: str
     cargo: str = Field(default="corretor") # "corretor" ou "admin"
     comissao_padrao: Optional[float] = Field(default=None)
+    ativo: bool = Field(default=True)
 
     reset_token: Optional[str] = Field(default=None)
     reset_token_expires: Optional[datetime] = Field(default=None)
@@ -27,6 +28,7 @@ class Produtor(SQLModel, table=True):
     cpf_cnpj: Optional[str] = None 
     cidade: Optional[str] = None
     uf: Optional[str] = None
+    ativo: bool = Field(default=True)
     # Vínculos
     fazendas: List["Fazenda"] = Relationship(back_populates="produtor")
     ofertas: List["Oferta"] = Relationship(back_populates="produtor")
@@ -48,6 +50,7 @@ class Fazenda(SQLModel, table=True):
     # Campos que você já tinha colocado
     capacidade_carregamento: Optional[int] = None # Ex: 50 (toneladas)
     comprimento_balanca: Optional[float] = None
+    ativo: bool = Field(default=True)
     
     # Dependência de criação (A fazenda não existe sem um produtor)
     produtor_id: int = Field(foreign_key="produtor.id")
@@ -77,6 +80,7 @@ class Oferta(SQLModel, table=True):
     preco: float = Field(description="Preço ofertado por saca")
     moeda: str = Field(default="BRL", max_length=3, description="Moeda da negociação, ex: BRL, USD")
     data_entrega_embarque: date = Field(description="Data limite ou programada para entrega/embarque")
+    ativo: bool = Field(default=True)
     
     # RELACIONAMENTOS ORM
     produtor: Optional[Produtor] = Relationship(back_populates="ofertas")
@@ -93,6 +97,7 @@ class Empresa(SQLModel, table=True):
     telefone: Optional[str] = None
     email: Optional[str] = None
     endereco: Optional[str] = None
+    ativo: bool = Field(default=True)
     
     contratos: List["Contrato"] = Relationship(back_populates="empresa_compradora")
     compradores: List["Comprador"] = Relationship(back_populates="empresa")
@@ -103,6 +108,7 @@ class Comprador(SQLModel, table=True):
     nome: str
     email: str = Field(unique=True, index=True)
     telefone: str
+    ativo: bool = Field(default=True)
     
     # Relação com a Empresa (Chave Estrangeira)
     empresa_id: int = Field(foreign_key="empresa.id", index=True)
@@ -128,6 +134,7 @@ class Contrato(SQLModel, table=True):
     valor_comissao: float
     status: str = Field(default="Fechado") # Fechado, Emitido, Concluído, Cancelado
     observacoes: Optional[str] = None
+    ativo: bool = Field(default=True)
 
     # Chaves Estrangeiras (Quem fez, quem vendeu, de onde saiu, quem comprou)
     corretor: Optional[Usuario] = Relationship(back_populates="contratos")
