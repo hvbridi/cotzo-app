@@ -172,7 +172,7 @@ def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario
 def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado, db)
     # Atrela o produtor ao corretor que o criou, caso não tenha sido enviado
-    if not produtor.usuario_id:
+    if not produtor.usuario_id or usuario_logado.get("cargo") == "corretor":
         produtor.usuario_id = usuario_db.id
         
     db.add(produtor)
@@ -238,7 +238,8 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
 @app.post("/fazendas/", tags=["Fazenda"])
 def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado, db)
-    if not fazenda.usuario_id: fazenda.usuario_id = usuario_db.id
+    if not fazenda.usuario_id or usuario_logado.get("cargo") == "corretor": 
+        fazenda.usuario_id = usuario_db.id
     db.add(fazenda)
     db.commit()
     db.refresh(fazenda)
@@ -297,7 +298,8 @@ def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario
 @app.post("/empresas/", tags=["Empresa"])
 def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado, db)
-    if not empresa.usuario_id: empresa.usuario_id = usuario_db.id
+    if not empresa.usuario_id or usuario_logado.get("cargo") == "corretor": 
+        empresa.usuario_id = usuario_db.id
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
@@ -596,7 +598,7 @@ def criar_comprador(comprador: Comprador, session: Session = Depends(get_session
     usuario_db = obter_usuario_db(usuario_logado, session)
     
     # Atrela o comprador ao corretor que o criou
-    if not comprador.usuario_id: 
+    if not comprador.usuario_id or usuario_logado.get("cargo") == "corretor": 
         comprador.usuario_id = usuario_db.id
         
     empresa_db = session.get(Empresa, comprador.empresa_id)
