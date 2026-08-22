@@ -803,27 +803,23 @@ class RedefinirSenhaRequest(BaseModel):
     nova_senha: str
 
 @app.post("/redefinir-senha", tags=["Senha"])
-def redefinir_senha(dados: RedefinirSenhaRequest, db: Session = Depends(get_session)):
-    # 1. Busca o usuário que possui esse token
+@limiter.limit("5/minute")
+def redefinir_senha(request: Request, dados: RedefinirSenhaRequest, db: Session = Depends(get_session)):
     usuario = db.exec(select(Usuario).where(Usuario.reset_token == dados.token)).first()
-    
-    # 2. Valida se o token existe e se não expirou
+
     if not usuario or not usuario.reset_token_expires:
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    
+
     if datetime.utcnow() > usuario.reset_token_expires:
         raise HTTPException(status_code=400, detail="O token de recuperação expirou.")
-    
-    # 3. Criptografa a nova senha usando a sua função existente
+
     usuario.senha_hash = obter_hash_senha(dados.nova_senha)
-    
-    # 4. Limpa o token para que ele não possa ser reutilizado
     usuario.reset_token = None
     usuario.reset_token_expires = None
-    
+
     db.add(usuario)
     db.commit()
-    
+
     return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}
 
 @app.get("/conectar-whatsapp", response_class=HTMLResponse)
