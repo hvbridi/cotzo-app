@@ -28,7 +28,7 @@ from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
-EVOLUTION_URL = "https://evolution-api-production-aeca.up.railway.app"
+EVOLUTION_URL = os.getenv('EVOLUTION_URL')
 EVOLUTION_API_KEY = os.getenv('EVOLUTION_API_KEY')
 INSTANCIA = "corretora"
 
