@@ -1014,7 +1014,7 @@ def conectar_whatsapp():
     try:
         # 1. Tenta CRIAR a nova instância
         url_create = f"{EVOLUTION_URL}/instance/create"
-        payload = {"instanceName": INSTANCIA, "qrcode": True}
+        payload = {"instanceName": INSTANCIA, "qrcode": True, "integration": "WHATSAPP-BAILEYS"}
         resposta = requests.post(url_create, headers=headers, json=payload)
         dados = resposta.json()
         
