@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import secrets
 from fastapi.responses import HTMLResponse
 # Nossas tabelas
@@ -102,6 +102,19 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
     token = criar_token_acesso({"sub": usuario.email, "cargo": usuario.cargo})
     return {"access_token": token, "token_type": "bearer"}
 
+class UsuarioCreate(BaseModel):
+    nome: str
+    email: str
+    telefone: str
+    senha: Optional[str] = None
+    senha_hash: Optional[str] = None
+    cargo: str = "corretor"
+    comissao_padrao: Optional[float] = None
+
+class AlterarSenhaRequest(BaseModel):
+    senha_atual: str
+    nova_senha: str
+
 class UsuarioUpdate(BaseModel):
     nome: Optional[str] = None
     email: Optional[str] = None
@@ -173,12 +186,25 @@ class CompradorUpdate(BaseModel):
     telefone: Optional[str] = None
 
 @app.post("/usuarios/", tags=["Usuario"])
-def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def criar_usuario(usuario_in: UsuarioCreate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     if usuario_logado.get('cargo') != "admin":
         raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores criam usuários.")
-    if usuario.cargo not in ["corretor", "gerente", "admin"]:
+    if usuario_in.cargo not in ["corretor", "gerente", "admin"]:
         raise HTTPException(status_code=400, detail="Cargo inválido. Digite apenas: corretor, gerente ou admin.")
-    usuario.senha_hash = obter_hash_senha(usuario.senha_hash)
+    
+    senha_pura = usuario_in.senha or usuario_in.senha_hash
+    if not senha_pura or len(senha_pura) < 8:
+        raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 8 caracteres.")
+    
+    usuario = Usuario(
+        nome=usuario_in.nome,
+        email=usuario_in.email,
+        telefone=usuario_in.telefone,
+        senha_hash=obter_hash_senha(senha_pura),
+        cargo=usuario_in.cargo,
+        comissao_padrao=usuario_in.comissao_padrao,
+        ativo=True
+    )
     db.add(usuario)
     try:
         db.commit()
@@ -189,21 +215,33 @@ def criar_usuario(usuario: Usuario, db: Session = Depends(get_session), usuario_
     return {"msg": "Usuário criado com sucesso!", "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})}
 
 @app.get("/usuarios/", tags=["Usuario"])
-def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+def ler_usuarios(inativos: bool = False, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     # Corretor não pode ver a lista de todos os usuários
     if usuario_logado.get("cargo") == "corretor":
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    usuarios = db.exec(select(Usuario).where(Usuario.ativo == True)).all()
+    query = select(Usuario).where(Usuario.ativo == (not inativos))
+    usuarios = db.exec(query).all()
     return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
 @app.get('/usuarios/me', tags=["Usuario"])
 def ler_usuario_atual(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    usuario_db = obter_usuario_db(usuario_logado,db)
+    usuario_db = obter_usuario_db(usuario_logado, db)
     if not usuario_db or not usuario_db.ativo:
         raise HTTPException(status_code=404, detail="Usuário não encontrado ou inativo.")
     usuario_dict = usuario_db.model_dump()
     usuario_dict.pop('senha_hash', None)
+    usuario_dict.pop('reset_token', None)
+    usuario_dict.pop('reset_token_expires', None)
     return usuario_dict
+
+@app.get("/usuarios/{usuario_id}", tags=["Usuario"])
+def ler_usuario_por_id(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") == "corretor":
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    usuario = db.get(Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    return usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})
 
 @app.put("/usuarios/{usuario_id}", tags=["Usuario"])
 def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -226,7 +264,7 @@ def atualizar_usuario(usuario_id: int, dados_atualizados: UsuarioUpdate, db: Ses
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="E-mail já está em uso por outro usuário.")
-    return {"msg": "Usuário atualizado!", "dados": usuario.model_dump(exclude={"senha_hash"})}
+    return {"msg": "Usuário atualizado!", "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})}
 
 @app.delete("/usuarios/{usuario_id}", tags=["Usuario"])
 def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -238,6 +276,40 @@ def deletar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario
     db.add(usuario)
     db.commit()
     return {"msg": "Usuário desativado com sucesso."}
+
+@app.put("/usuarios/{usuario_id}/restaurar", tags=["Usuario"])
+def restaurar_usuario(usuario_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get('cargo') != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    usuario = db.get(Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    usuario.ativo = True
+    db.add(usuario)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Usuarios', id_afetado=usuario.id, acao='Restaurar',
+                    detalhes=f'O usuário {usuario.nome} foi restaurado')
+    db.add(log)
+    db.commit()
+    return {"msg": "Usuário restaurado com sucesso.", "dados": usuario.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"})}
+
+@app.post("/alterar-senha", tags=["Senha"])
+def alterar_senha(dados: AlterarSenhaRequest, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    """Permite que qualquer usuário logado altere sua própria senha"""
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if not usuario_db or not usuario_db.ativo:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado ou inativo.")
+    
+    if not verificar_senha(dados.senha_atual, usuario_db.senha_hash):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta.")
+    
+    if len(dados.nova_senha) < 8:
+        raise HTTPException(status_code=400, detail="A nova senha deve ter no mínimo 8 caracteres.")
+    
+    usuario_db.senha_hash = obter_hash_senha(dados.nova_senha)
+    db.add(usuario_db)
+    db.commit()
+    return {"msg": "Senha alterada com sucesso!"}
 
 
 # ==========================================
@@ -260,14 +332,26 @@ def criar_produtor(produtor: Produtor, db: Session = Depends(get_session), usuar
     return {"msg": "Produtor criado com sucesso!", "dados": produtor}
 
 @app.get("/produtores/", tags=["Produtor"])
-def ler_produtores(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    query = select(Produtor).where(Produtor.ativo == True)
+def ler_produtores(inativos: bool = False, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    query = select(Produtor).where(Produtor.ativo == (not inativos))
     if usuario_logado.get("cargo") in ["admin", "gerente"]:
         return db.exec(query).all()
     
     # Se for corretor, vê apenas os clientes dele
     usuario_db = obter_usuario_db(usuario_logado, db)
     return db.exec(query.where(Produtor.usuario_id == usuario_db.id)).all()
+
+@app.get("/produtores/{produtor_id}", tags=["Produtor"])
+def ler_produtor_por_id(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    produtor = db.get(Produtor, produtor_id)
+    if not produtor or not produtor.ativo:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and produtor.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Este produtor não pertence a você.")
+    return produtor
 
 @app.put("/produtores/{produtor_id}", tags=["Produtor"])
 def atualizar_produtor(produtor_id: int, dados_atualizados: ProdutorUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -307,6 +391,22 @@ def deletar_produtor(produtor_id: int, db: Session = Depends(get_session), usuar
     db.commit()
     return {"msg": "Produtor desativado com sucesso."}
 
+@app.put("/produtores/{produtor_id}/restaurar", tags=["Produtor"])
+def restaurar_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    produtor = db.get(Produtor, produtor_id)
+    if not produtor:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado.")
+    produtor.ativo = True
+    db.add(produtor)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Produtores', id_afetado=produtor.id, acao='Restaurar',
+                    detalhes=f'O produtor {produtor.nome} foi restaurado')
+    db.add(log)
+    db.commit()
+    return {"msg": "Produtor restaurado com sucesso.", "dados": produtor}
+
 
 # ==========================================
 # 🚜 C. FAZENDAS
@@ -334,6 +434,42 @@ def criar_fazenda(fazenda: Fazenda, db: Session = Depends(get_session), usuario_
     db.commit()
     db.refresh(fazenda)
     return {"msg": "Fazenda criada com sucesso!", "dados": fazenda}
+
+@app.get("/fazendas/", tags=["Fazenda"])
+def ler_fazendas(inativos: bool = False, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    
+    query = (
+        select(Fazenda, Produtor.nome.label("produtor_nome"))
+        .outerjoin(Produtor, Fazenda.produtor_id == Produtor.id)
+        .where(Fazenda.ativo == (not inativos))
+    )
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor":
+        query = query.where(Fazenda.usuario_id == usuario_db.id)
+        
+    resultados = db.exec(query).all()
+    lista_final = []
+    for fazenda, produtor_nome in resultados:
+        item = fazenda.model_dump()
+        item["produtor_nome"] = produtor_nome or "N/A"
+        lista_final.append(item)
+    return lista_final
+
+@app.get("/fazendas/{fazenda_id}", tags=["Fazenda"])
+def ler_fazenda_por_id(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    fazenda = db.get(Fazenda, fazenda_id)
+    if not fazenda or not fazenda.ativo:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and fazenda.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Esta fazenda não pertence a você.")
+    
+    produtor = db.get(Produtor, fazenda.produtor_id)
+    item = fazenda.model_dump()
+    item["produtor_nome"] = produtor.nome if produtor else "N/A"
+    return item
 
 @app.get("/produtores/{produtor_id}/fazendas", tags=["Fazenda"])
 def ler_fazendas_do_produtor(produtor_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -396,6 +532,22 @@ def deletar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario
     db.commit()
     return {"msg": "Fazenda desativada."}
 
+@app.put("/fazendas/{fazenda_id}/restaurar", tags=["Fazenda"])
+def restaurar_fazenda(fazenda_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    fazenda = db.get(Fazenda, fazenda_id)
+    if not fazenda:
+        raise HTTPException(status_code=404, detail="Fazenda não encontrada.")
+    fazenda.ativo = True
+    db.add(fazenda)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Fazendas', id_afetado=fazenda.id, acao='Restaurar',
+                    detalhes=f'A fazenda {fazenda.nome} foi restaurada')
+    db.add(log)
+    db.commit()
+    return {"msg": "Fazenda restaurada com sucesso.", "dados": fazenda}
+
 
 # ==========================================
 # 🏢 D. EMPRESAS (Tradings)
@@ -419,8 +571,17 @@ def criar_empresa(empresa: Empresa, db: Session = Depends(get_session), usuario_
     return {"msg": "Empresa criada com sucesso!", "dados": empresa}
 
 @app.get("/empresas/", tags=["Empresa"])
-def ler_empresas(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return db.exec(select(Empresa).where(Empresa.ativo == True)).all()
+def ler_empresas(inativos: bool = False, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    return db.exec(select(Empresa).where(Empresa.ativo == (not inativos))).all()
+
+@app.get("/empresas/{empresa_id}", tags=["Empresa"])
+def ler_empresa_por_id(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa or not empresa.ativo:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    return empresa
 
 @app.put("/empresas/{empresa_id}", tags=["Empresa"])
 def atualizar_empresa(empresa_id: int, dados_atualizados: EmpresaUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -461,6 +622,22 @@ def deletar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario
     db.add(log)
     db.commit()
     return {"msg": "Empresa desativada."}
+
+@app.put("/empresas/{empresa_id}/restaurar", tags=["Empresa"])
+def restaurar_empresa(empresa_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    empresa.ativo = True
+    db.add(empresa)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Empresas', id_afetado=empresa.id, acao='Restaurar',
+                    detalhes=f'A empresa {empresa.razao_social} foi restaurada')
+    db.add(log)
+    db.commit()
+    return {"msg": "Empresa restaurada com sucesso.", "dados": empresa}
 
 
 # ==========================================
@@ -549,13 +726,60 @@ def criar_contrato(
     return {"msg": "Contrato emitido e notificações enviadas com sucesso!", "dados": contrato}
 
 @app.get("/contratos/", tags=["Contrato"])
-def ler_contratos(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    query = select(Contrato).where(Contrato.ativo == True)
-    if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return db.exec(query).all()
-        
+def ler_contratos(inativos: bool = False, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    
+    query = (
+        select(
+            Contrato,
+            Produtor.nome.label("produtor_nome"),
+            Fazenda.nome.label("fazenda_nome"),
+            Empresa.razao_social.label("empresa_razao_social"),
+            Usuario.nome.label("corretor_nome")
+        )
+        .outerjoin(Produtor, Contrato.produtor_id == Produtor.id)
+        .outerjoin(Fazenda, Contrato.fazenda_id == Fazenda.id)
+        .outerjoin(Empresa, Contrato.empresa_id == Empresa.id)
+        .outerjoin(Usuario, Contrato.usuario_id == Usuario.id)
+        .where(Contrato.ativo == (not inativos))
+    )
+    
     usuario_db = obter_usuario_db(usuario_logado, db)
-    return db.exec(query.where(Contrato.usuario_id == usuario_db.id)).all()
+    if usuario_logado.get("cargo") == "corretor":
+        query = query.where(Contrato.usuario_id == usuario_db.id)
+        
+    resultados = db.exec(query).all()
+    lista_final = []
+    for contrato, p_nome, f_nome, e_nome, c_nome in resultados:
+        item = contrato.model_dump()
+        item["produtor_nome"] = p_nome or "N/A"
+        item["fazenda_nome"] = f_nome or "N/A"
+        item["empresa_razao_social"] = e_nome or "N/A"
+        item["corretor_nome"] = c_nome or "N/A"
+        lista_final.append(item)
+    return lista_final
+
+@app.get("/contratos/{contrato_id}", tags=["Contrato"])
+def ler_contrato_por_id(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    contrato = db.get(Contrato, contrato_id)
+    if not contrato or not contrato.ativo:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    if usuario_logado.get("cargo") == "corretor" and contrato.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Este contrato não pertence a você.")
+    
+    produtor = db.get(Produtor, contrato.produtor_id)
+    fazenda = db.get(Fazenda, contrato.fazenda_id)
+    empresa = db.get(Empresa, contrato.empresa_id)
+    corretor = db.get(Usuario, contrato.usuario_id) if contrato.usuario_id else None
+    
+    item = contrato.model_dump()
+    item["produtor_nome"] = produtor.nome if produtor else "N/A"
+    item["fazenda_nome"] = fazenda.nome if fazenda else "N/A"
+    item["empresa_razao_social"] = empresa.razao_social if empresa else "N/A"
+    item["corretor_nome"] = corretor.nome if corretor else "N/A"
+    return item
 
 @app.put("/contratos/{contrato_id}", tags=["Contrato"])
 def atualizar_contrato(contrato_id: int, dados_atualizados: ContratoUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -631,6 +855,23 @@ def deletar_contrato(contrato_id: int, db: Session = Depends(get_session), usuar
     db.add(log)
     db.commit()
     return {"msg": "Contrato desativado."}
+
+@app.put("/contratos/{contrato_id}/restaurar", tags=["Contrato"])
+def restaurar_contrato(contrato_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    contrato = db.get(Contrato, contrato_id)
+    if not contrato:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+    contrato.ativo = True
+    contrato.status = "Fechado"
+    db.add(contrato)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Restaurar',
+                    detalhes=f'O contrato de id {contrato.id} foi restaurado')
+    db.add(log)
+    db.commit()
+    return {"msg": "Contrato restaurado com sucesso.", "dados": contrato}
 
 
 # ==========================================
@@ -722,10 +963,47 @@ def criar_oferta(
 
     return nova_oferta
 
-@app.get("/ofertas/", response_model=list[Oferta], tags=["Oferta"])
-def listar_ofertas(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    return session.exec(select(Oferta).where(Oferta.ativo == True)).all()
-        
+@app.get("/ofertas/", tags=["Oferta"])
+def listar_ofertas(inativos: bool = False, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    
+    query = (
+        select(
+            Oferta,
+            Produtor.nome.label("produtor_nome"),
+            Fazenda.nome.label("fazenda_nome"),
+            Usuario.nome.label("corretor_nome")
+        )
+        .outerjoin(Produtor, Oferta.produtor_id == Produtor.id)
+        .outerjoin(Fazenda, Oferta.fazenda_id == Fazenda.id)
+        .outerjoin(Usuario, Oferta.usuario_id == Usuario.id)
+        .where(Oferta.ativo == (not inativos))
+    )
+    resultados = session.exec(query).all()
+    lista_final = []
+    for oferta, p_nome, f_nome, c_nome in resultados:
+        item = oferta.model_dump()
+        item["produtor_nome"] = p_nome or "N/A"
+        item["fazenda_nome"] = f_nome or "N/A"
+        item["corretor_nome"] = c_nome or "N/A"
+        lista_final.append(item)
+    return lista_final
+
+@app.get("/ofertas/{oferta_id}", tags=["Oferta"])
+def ler_oferta_por_id(oferta_id: int, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    oferta = session.get(Oferta, oferta_id)
+    if not oferta or not oferta.ativo:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
+    produtor = session.get(Produtor, oferta.produtor_id)
+    fazenda = session.get(Fazenda, oferta.fazenda_id)
+    corretor = session.get(Usuario, oferta.usuario_id) if oferta.usuario_id else None
+    
+    item = oferta.model_dump()
+    item["produtor_nome"] = produtor.nome if produtor else "N/A"
+    item["fazenda_nome"] = fazenda.nome if fazenda else "N/A"
+    item["corretor_nome"] = corretor.nome if corretor else "N/A"
+    return item
 
 @app.put("/ofertas/{oferta_id}", tags=["Oferta"])
 def atualizar_oferta(oferta_id: int, dados_atualizados: OfertaUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -764,6 +1042,22 @@ def deletar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_l
     db.commit()
     return {"msg": "Oferta desativada."}
 
+@app.put("/ofertas/{oferta_id}/restaurar", tags=["Oferta"])
+def restaurar_oferta(oferta_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    oferta = db.get(Oferta, oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada.")
+    oferta.ativo = True
+    db.add(oferta)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Ofertas', id_afetado=oferta.id, acao='Restaurar',
+                    detalhes=f'A oferta de id {oferta.id} foi restaurada')
+    db.add(log)
+    db.commit()
+    return {"msg": "Oferta restaurada com sucesso.", "dados": oferta}
+
 # ==========================================
 # 🛒 F. COMPRADORES
 # ==========================================
@@ -791,16 +1085,41 @@ def criar_comprador(comprador: Comprador, session: Session = Depends(get_session
         raise HTTPException(status_code=400, detail="E-mail já está em uso por outro comprador.")
     return comprador
 
-@app.get("/compradores/", response_model=list[Comprador], tags=["Comprador"])
-def listar_compradores(session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    query = select(Comprador).where(Comprador.ativo == True)
-    # Gerente e Admin veem todos os contatos
-    if usuario_logado.get("cargo") in ["admin", "gerente"]:
-        return session.exec(query).all()
-        
-    # Corretor vê apenas os contatos que ele mesmo cadastrou
+@app.get("/compradores/", tags=["Comprador"])
+def listar_compradores(inativos: bool = False, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if inativos and usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    
+    query = (
+        select(Comprador, Empresa.razao_social.label("empresa_razao_social"))
+        .outerjoin(Empresa, Comprador.empresa_id == Empresa.id)
+        .where(Comprador.ativo == (not inativos))
+    )
     usuario_db = obter_usuario_db(usuario_logado, session)
-    return session.exec(query.where(Comprador.usuario_id == usuario_db.id)).all()
+    if usuario_logado.get("cargo") == "corretor":
+        query = query.where(Comprador.usuario_id == usuario_db.id)
+        
+    resultados = session.exec(query).all()
+    lista_final = []
+    for comprador, empresa_nome in resultados:
+        item = comprador.model_dump()
+        item["empresa_razao_social"] = empresa_nome or "N/A"
+        lista_final.append(item)
+    return lista_final
+
+@app.get("/compradores/{comprador_id}", tags=["Comprador"])
+def ler_comprador_por_id(comprador_id: int, session: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    comprador = session.get(Comprador, comprador_id)
+    if not comprador or not comprador.ativo:
+        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    if usuario_logado.get("cargo") == "corretor" and comprador.usuario_id != usuario_db.id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Este comprador não pertence a você.")
+    
+    empresa = session.get(Empresa, comprador.empresa_id)
+    item = comprador.model_dump()
+    item["empresa_razao_social"] = empresa.razao_social if empresa else "N/A"
+    return item
 
 @app.put("/compradores/{comprador_id}", tags=["Comprador"])
 def atualizar_comprador(comprador_id: int, dados_atualizados: CompradorUpdate, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
@@ -847,6 +1166,22 @@ def deletar_comprador(comprador_id: int, db: Session = Depends(get_session), usu
     db.add(log)
     db.commit()
     return {"msg": "Comprador desativado com sucesso."}
+
+@app.put("/compradores/{comprador_id}/restaurar", tags=["Comprador"])
+def restaurar_comprador(comprador_id: int, db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
+    if usuario_logado.get("cargo") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar registros.")
+    comprador = db.get(Comprador, comprador_id)
+    if not comprador:
+        raise HTTPException(status_code=404, detail="Comprador não encontrado.")
+    comprador.ativo = True
+    db.add(comprador)
+    usuario_db = obter_usuario_db(usuario_logado, db)
+    log = Historico(usuario_id=usuario_db.id, tabela_afetada='Compradores', id_afetado=comprador.id, acao='Restaurar',
+                    detalhes=f'O comprador {comprador.nome} foi restaurado')
+    db.add(log)
+    db.commit()
+    return {"msg": "Comprador restaurado com sucesso.", "dados": comprador}
 
 
 # ==========================================
@@ -946,12 +1281,17 @@ def exportar_dados_para_excel(
 @limiter.limit("3/minute")
 def esqueci_senha(
     request: Request, 
-    dados: EsqueciSenhaRequest, 
     background_tasks: BackgroundTasks, 
+    email: Optional[str] = None,
+    dados: Optional[EsqueciSenhaRequest] = None,
     db: Session = Depends(get_session)
 ):
-    # 1. Busca pelo objeto 'dados.email'
-    usuario = db.exec(select(Usuario).where(Usuario.email == dados.email)).first()
+    target_email = email or (dados.email if dados else None)
+    if not target_email:
+        raise HTTPException(status_code=400, detail="E-mail não fornecido.")
+
+    # 1. Busca pelo usuário pelo e-mail recebido
+    usuario = db.exec(select(Usuario).where(Usuario.email == target_email)).first()
     
     if not usuario:
         return {"msg": "Se o e-mail estiver cadastrado, as instruções serão enviadas."}
@@ -961,7 +1301,7 @@ def esqueci_senha(
     
     token_recuperacao = "".join(secrets.choice(string.digits) for _ in range(6))
     usuario.reset_token = token_recuperacao
-    usuario.reset_token_expires = datetime.utcnow() + timedelta(minutes=15)
+    usuario.reset_token_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
     
     db.add(usuario)
     db.commit()
@@ -986,12 +1326,22 @@ class RedefinirSenhaRequest(BaseModel):
 @app.post("/redefinir-senha", tags=["Senha"])
 @limiter.limit("5/minute")
 def redefinir_senha(request: Request, dados: RedefinirSenhaRequest, db: Session = Depends(get_session)):
+    if len(dados.nova_senha) < 8:
+        raise HTTPException(status_code=400, detail="A nova senha deve ter no mínimo 8 caracteres.")
+
     usuario = db.exec(select(Usuario).where(Usuario.reset_token == dados.token)).first()
 
     if not usuario or not usuario.reset_token_expires:
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
-    if datetime.utcnow() > usuario.reset_token_expires:
+    # Se a data no banco for naive, compara com utcnow naive ou utc aware
+    expiracao = usuario.reset_token_expires
+    if expiracao.tzinfo is None:
+        agora = datetime.utcnow()
+    else:
+        agora = datetime.now(timezone.utc)
+
+    if agora > expiracao:
         raise HTTPException(status_code=400, detail="O token de recuperação expirou.")
 
     usuario.senha_hash = obter_hash_senha(dados.nova_senha)
@@ -1041,13 +1391,46 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
                 "qrcode": imagem_base64
             }
         else:
-            return {
-                "status": "conectado_ou_indisponivel",
-                "detalhes": dados
-            }
+            # 4. Checa o estado da conexão na Evolution API
+            state_url = f"{EVOLUTION_URL}/instance/connectionState/{INSTANCIA}"
+            state_res = requests.get(state_url, headers=headers)
+            state_data = state_res.json() if state_res.status_code == 200 else {}
+            state = state_data.get("instance", {}).get("state") if isinstance(state_data, dict) else None
+
+            if state == "open":
+                return {
+                    "status": "conectado",
+                    "detalhes": state_data
+                }
+            else:
+                return {
+                    "status": "indisponivel",
+                    "detalhes": dados
+                }
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao conectar com a Evolution API: {str(e)}")
+
+@app.post("/desconectar-whatsapp", tags=["WhatsApp"])
+def desconectar_whatsapp(usuario_logado=Depends(usuario_atual)):
+    """Desconecta a instância do WhatsApp na Evolution API para permitir novo pareamento (Admin e Gerente)"""
+    if usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores ou gerentes.")
+
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        url_logout = f"{EVOLUTION_URL}/instance/logout/{INSTANCIA}"
+        resposta = requests.delete(url_logout, headers=headers)
+        return {
+            "status": "desconectado",
+            "detalhes": resposta.json() if resposta.content else {}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao desconectar WhatsApp: {str(e)}")
 
 @app.get('/historicos/',tags=['Historico'])
 def pegar_historico(db=Depends(get_session), usuario_logado=Depends(usuario_atual)):

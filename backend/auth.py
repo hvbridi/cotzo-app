@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -15,7 +15,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("Faltou configurar a SECRET_KEY no arquivo .env!")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 horas para evitar expiração prematura durante o trabalho
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -31,7 +31,7 @@ def verificar_senha(senha_limpa, senha_hash):
 # Função para criar o Token (O Crachá)
 def criar_token_acesso(dados: dict):
     dados_copia = dados.copy()
-    expiracao = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expiracao = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     dados_copia['exp'] = expiracao
     token_jwt = jwt.encode(dados_copia, SECRET_KEY, algorithm=ALGORITHM)
     return token_jwt

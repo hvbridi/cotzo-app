@@ -11,8 +11,9 @@ load_dotenv()
 # Pega a URL do banco de dados do arquivo .env
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# O Engine é o "motor" de conexão. echo=True faz ele imprimir no terminal os comandos SQL que está rodando (ótimo para ver se deu certo).
-engine = create_engine(DATABASE_URL, echo=True)
+# O Engine é o "motor" de conexão. echo pode ser ativado com SQL_ECHO=true para debug.
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
+engine = create_engine(DATABASE_URL, echo=SQL_ECHO)
 
 def criar_tabelas():
     # Vai olhar todos os modelos que importamos ali em cima e criar as tabelas reais no PostgreSQL!
