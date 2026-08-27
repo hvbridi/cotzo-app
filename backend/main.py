@@ -705,7 +705,7 @@ def criar_oferta(
             f"🚜 *Fazenda:* {fazenda_nome}\n"
             f"📦 *Volume:* {dados.volume:,} {dados.tipo_medida.lower()}\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
-            f"📅 *Embarque:* {dados.data_entrega_embarque}\n\n"
+            f"📅 *Embarque:* {dados.data_entrega_embarque.strftime('%d/%m/%Y')}\n\n"
             f"👨‍💼 *Corretor:* {usuario_db.nome}\n"
             f"📞 *WhatsApp:* {usuario_db.telefone}\n\n"
             f"Responda esta mensagem ou clique no número acima para negociar!"
