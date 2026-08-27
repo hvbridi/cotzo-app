@@ -1051,7 +1051,7 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
 
 @app.get('/historicos/',tags=['Historico'])
 def pegar_historico(db=Depends(get_session), usuario_logado=Depends(usuario_atual)):
-    if usuario_logado.get('cargo') != 'admin':
+    if usuario_logado.get('cargo') not in ['admin', 'gerente']:
         raise HTTPException(status_code=403, detail="Cargo sem permissão")
     resultados = db.exec(
         select(Historico, Usuario.nome)
