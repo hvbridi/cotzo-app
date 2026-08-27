@@ -1003,9 +1003,12 @@ def redefinir_senha(request: Request, dados: RedefinirSenhaRequest, db: Session 
 
     return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}
 
-@app.get("/conectar-whatsapp", response_class=HTMLResponse)
-def conectar_whatsapp():
-    """Rota inteligente: Cria a instância nova ou conecta se já existir"""
+@app.get("/conectar-whatsapp", tags=["WhatsApp"])
+def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
+    """Gera o QR Code do WhatsApp em formato JSON (Apenas Admin e Gerente)"""
+    if usuario_logado.get("cargo") not in ["admin", "gerente"]:
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores ou gerentes.")
+
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json"
@@ -1033,23 +1036,18 @@ def conectar_whatsapp():
                 imagem_base64 = dados["qrcode"]["base64"]
         
         if imagem_base64:
-            html = f"""
-            <html>
-                <body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; height: 100vh; background-color: #f0f2f5;">
-                    <h2>Conectar WhatsApp (Instância: {INSTANCIA})</h2>
-                    <p>Aponte o celular e escaneie o código abaixo:</p>
-                    <img src="{imagem_base64}" style="width: 300px; height: 300px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-                    <br>
-                    <button onclick="window.location.reload();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #25D366; color: white; border: none; border-radius: 5px;">🔄 Atualizar Código</button>
-                </body>
-            </html>
-            """
-            return HTMLResponse(content=html)
+            return {
+                "status": "aguardando_leitura",
+                "qrcode": imagem_base64
+            }
         else:
-            return HTMLResponse(content=f"<h3>O WhatsApp já está conectado ou houve um erro:</h3> <p>{dados}</p>")
+            return {
+                "status": "conectado_ou_indisponivel",
+                "detalhes": dados
+            }
             
     except Exception as e:
-        return HTMLResponse(content=f"<h3>Erro ao conectar com a Evolution API:</h3> <p>{str(e)}</p>")
+        raise HTTPException(status_code=500, detail=f"Erro ao conectar com a Evolution API: {str(e)}")
 
 @app.get('/historicos/',tags=['Historico'])
 def pegar_historico(db=Depends(get_session), usuario_logado=Depends(usuario_atual)):
