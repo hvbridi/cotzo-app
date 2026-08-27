@@ -1,90 +1,221 @@
-/* Reset global para o app ocupar 100% da tela sem pulos de layout */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@import "tailwindcss";
+
+/* Mantém o dark: acionado por classe, como era no config antigo (darkMode: "class") */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   TEMA — migrado do bloco tailwind.config que ficava no index.html
+   Na v4 a configuração vive aqui no CSS.
+   Cada --color-X gera as classes bg-X, text-X, border-X, etc.
+   ============================================================ */
+@theme {
+  /* Superfícies */
+  --color-background: #faf6f0;
+  --color-on-background: #2e3230;
+  --color-surface: #faf6f0;
+  --color-on-surface: #2e3230;
+  --color-surface-variant: #e4e0d8;
+  --color-on-surface-variant: #4a4e4a;
+  --color-surface-bright: #faf6f0;
+  --color-surface-dim: #dbd7cf;
+  --color-surface-tint: #4a7c59;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f5f1ea;
+  --color-surface-container: #f0ece4;
+  --color-surface-container-high: #eae6de;
+  --color-surface-container-highest: #e4e0d8;
+  --color-inverse-surface: #2e3230;
+  --color-inverse-on-surface: #f5f0e8;
+
+  /* Primária */
+  --color-primary: #4a7c59;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #78a886;
+  --color-on-primary-container: #d8f0de;
+  --color-primary-fixed: #c8e8d0;
+  --color-primary-fixed-dim: #8ecf9e;
+  --color-on-primary-fixed: #002110;
+  --color-on-primary-fixed-variant: #2a6038;
+  --color-inverse-primary: #8ecf9e;
+
+  /* Secundária */
+  --color-secondary: #6b6358;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #f0e8db;
+  --color-on-secondary-container: #5e5548;
+  --color-secondary-fixed: #f0e8db;
+  --color-secondary-fixed-dim: #d4ccbf;
+  --color-on-secondary-fixed: #1e1a13;
+  --color-on-secondary-fixed-variant: #4a4538;
+
+  /* Terciária */
+  --color-tertiary: #705c30;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #c4a66a;
+  --color-on-tertiary-container: #554020;
+  --color-tertiary-fixed: #f8e0a8;
+  --color-tertiary-fixed-dim: #dcc48e;
+  --color-on-tertiary-fixed: #221a05;
+  --color-on-tertiary-fixed-variant: #554020;
+
+  /* Erro */
+  --color-error: #b83230;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad8;
+  --color-on-error-container: #690005;
+
+  /* Contornos */
+  --color-outline: #74796e;
+  --color-outline-variant: #c4c8bc;
+
+  /* Fontes */
+  --font-headline: "Literata", serif;
+  --font-display: "Literata", serif;
+  --font-body: "Nunito Sans", sans-serif;
+  --font-label: "Nunito Sans", sans-serif;
+
+  /* A v4 deslocou a escala de sombra e desfoque (o shadow-sm da v3 virou shadow-xs).
+     Estes dois valores mantêm a aparência exatamente igual à de antes. */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --blur-sm: 4px;
 }
 
-/* Trava o viewport do navegador para nunca disparar o scroll nativo do Windows */
-html, body, #root {
-  width: 100%;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-}
+/* ============================================================
+   BASE
+   IMPORTANTE: precisa ficar dentro de @layer base.
+   CSS fora de camada vence QUALQUER classe do Tailwind, então um
+   reset solto aqui apagaria todos os p-*, m-* e afins do app.
+   O reset de margin/padding não é mais necessário: o preflight
+   do Tailwind já faz isso.
+   ============================================================ */
+@layer base {
+  /* Trava o viewport para nunca disparar o scroll nativo do Windows */
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+  }
 
-/* Customização sleek da barra de rolagem (elimina a barra cinza nativa) */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+  body {
+    font-family: "Nunito Sans", sans-serif;
+    background-color: var(--color-background);
+    color: var(--color-on-background);
+    line-height: 1.6;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Literata", serif;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: #c4c8bc;
-  border-radius: 9999px;
-}
+  /* Barra de rolagem enxuta */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #74796e;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-/* Reserva o espaço do scroll para evitar que o conteúdo dê 'shift' pro lado (Layout Shift Fix) */
-@supports (scrollbar-gutter: stable) {
-  .overflow-y-auto {
-    scrollbar-gutter: stable;
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-outline-variant);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-outline);
   }
 }
 
-/* Animação de transição suave ao carregar cada página */
-@keyframes fadeInPage {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
+/* ============================================================
+   COMPONENTES
+   Ficam em @layer components para que as classes utilitárias
+   do Tailwind ainda consigam sobrescrevê-las quando preciso.
+   ============================================================ */
+@layer components {
+  .font-headline {
+    font-family: "Literata", serif;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .soft-shadow {
+    box-shadow: 0 8px 32px rgba(46, 50, 48, 0.08);
+  }
+
+  .strong-shadow {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  /* Estilos orgânicos do Stitch para os formulários */
+  .form-input-organic {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-outline-variant);
+    background-color: var(--color-surface-bright);
+    color: var(--color-on-surface);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .form-input-organic:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(74, 124, 89, 0.2);
+  }
+
+  .form-input-organic:disabled {
+    background-color: var(--color-surface-container);
+    color: rgba(74, 78, 74, 0.5);
+    cursor: not-allowed;
+  }
+
+  .form-label-organic {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-on-surface-variant);
+    margin-bottom: 0.25rem;
   }
 }
 
-.animate-fade-in {
-  animation: fadeInPage 0.2s ease-out forwards;
-}
+/* ============================================================
+   UTILITÁRIOS PRÓPRIOS
+   ============================================================ */
+@layer utilities {
+  @keyframes fadeInPage {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-/* Estilos orgânicos do Stitch para os formulários */
-.form-input-organic {
-  width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid #c4c8bc;
-  background-color: #faf6f0;
-  color: #2e3230;
-  padding: 0.625rem 0.875rem;
-  font-size: 0.875rem;
-  transition: all 0.2s ease-in-out;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-}
+  .animate-fade-in {
+    animation: fadeInPage 0.2s ease-out forwards;
+  }
 
-.form-input-organic:focus {
-  outline: none;
-  border-color: #4a7c59;
-  box-shadow: 0 0 0 3px rgba(74, 124, 89, 0.2);
-}
-
-.form-input-organic:disabled {
-  background-color: #f0ece4;
-  color: rgba(74, 78, 74, 0.5);
-  cursor: not-allowed;
-}
-
-.form-label-organic {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #4a4e4a;
-  margin-bottom: 0.25rem;
+  /* Reserva o espaço do scroll para evitar layout shift */
+  @supports (scrollbar-gutter: stable) {
+    .overflow-y-auto {
+      scrollbar-gutter: stable;
+    }
+  }
 }

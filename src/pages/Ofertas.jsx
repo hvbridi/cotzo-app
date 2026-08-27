@@ -1,706 +1,512 @@
-import { useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
-import { apiFetch } from '../services/api'
+import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  useOfertasEnriquecidas,
+  useEditarOferta,
+  useExcluirOferta,
+  usePerfil,
+} from '../services/queries'
+import {
+  normalizarBusca,
+  formatarData,
+  formatarMoeda,
+  formatarNumero,
+} from '../utils/formatters'
+import { EstadoLista, SkeletonTabela } from '../components/ui/PageState'
+import Modal, { campoClasse, rotuloClasse } from '../components/ui/Modal'
+import { useToast, useConfirm } from '../components/ui/Feedback'
+
+const ABAS = [
+  {
+    id: 'Oferta',
+    icone: 'sell',
+    texto: 'Ofertas de Venda',
+    titulo: 'Ofertas disponíveis',
+    subtitulo: 'Lotes de grãos cadastrados para negociação com as tradings.',
+    rotuloPreco: 'Preço ofertado',
+    rotuloData: 'Previsão de embarque',
+    botao: 'Nova oferta',
+    destino: '/fechamento?aba=oferta',
+  },
+  {
+    id: 'Bid',
+    icone: 'track_changes',
+    texto: 'Preços-Alvo / BIDs',
+    titulo: 'Painel de BIDs e preços-alvo',
+    subtitulo: 'Intenções de venda firmes registradas para cruzamento de mercado.',
+    rotuloPreco: 'Preço alvo',
+    rotuloData: 'Validade',
+    botao: 'Novo BID',
+    destino: '/fechamento?aba=bid',
+  },
+]
+
+/** Cabeçalho clicável: o primeiro clique ordena, o segundo inverte */
+function ThOrdenavel({ campo, ordem, aoOrdenar, alinhar = 'left', children }) {
+  const ativo = ordem.campo === campo
+  return (
+    <th
+      className={`py-3 px-6 border-b border-outline-variant/20 ${
+        alinhar === 'right' ? 'text-right' : 'text-left'
+      }`}
+    >
+      <button
+        onClick={() => aoOrdenar(campo)}
+        className={`inline-flex items-center gap-1 font-bold uppercase text-xs cursor-pointer transition-colors hover:text-primary ${
+          ativo ? 'text-primary' : 'text-secondary'
+        } ${alinhar === 'right' ? 'flex-row-reverse' : ''}`}
+      >
+        {children}
+        <span className="material-symbols-outlined text-[16px]">
+          {!ativo
+            ? 'unfold_more'
+            : ordem.direcao === 'asc'
+            ? 'arrow_upward'
+            : 'arrow_downward'}
+        </span>
+      </button>
+    </th>
+  )
+}
+
+function comparar(a, b, campo) {
+  const va = a[campo]
+  const vb = b[campo]
+  if (va == null) return 1
+  if (vb == null) return -1
+  if (typeof va === 'number' && typeof vb === 'number') return va - vb
+  return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true })
+}
 
 export default function Ofertas() {
-  const navigate = useNavigate()
+  const toast = useToast()
+  const confirmar = useConfirm()
+  const { ehAdmin } = usePerfil()
 
-  // Controle de Abas: 'mercado' | 'bids'
-  const [abaAtiva, setAbaAtiva] = useState('mercado')
+  const [aba, setAba] = useState('Oferta')
   const [busca, setBusca] = useState('')
+  const [ordem, setOrdem] = useState({ campo: 'id', direcao: 'desc' })
+  const [edicao, setEdicao] = useState(null) // { id, nomes, form }
 
-  // Perfil do Usuário Logado
-  const [perfil, setPerfil] = useState({ nome: '', cargo: '' })
+  const { data: ofertas = [], isLoading, error, refetch } = useOfertasEnriquecidas()
 
-  // Estados de Dados do Banco
-  const [ofertas, setOfertas] = useState([])
-  const [produtores, setProdutores] = useState([])
-  const [todasFazendas, setTodasFazendas] = useState([])
-  const [fazendasModal, setFazendasModal] = useState([])
-  const [compradores, setCompradores] = useState([])
-
-  // Estados de Carregamento
-  const [carregando, setCarregando] = useState(true)
-  const [carregandoFazendasModal, setCarregandoFazendasModal] = useState(false)
-  const [disparando, setDisparando] = useState(false)
-  const [modalAberto, setModalAberto] = useState(false)
-
-  // Campos do Modal de Nova Oferta
-  const [produtorId, setProdutorId] = useState('')
-  const [fazendaId, setFazendaId] = useState('')
-  const [commodity, setCommodity] = useState('Soja')
-  const [volume, setVolume] = useState('')
-  const [tipoMedida, setTipoMedida] = useState('Sacas')
-  const [preco, setPreco] = useState('')
-  const [moeda, setMoeda] = useState('BRL')
-  const [dataEmbarque, setDataEmbarque] = useState(
-    new Date().toISOString().split('T')[0]
-  )
-  const [compradoresSelecionados, setCompradoresSelecionados] = useState([])
-
-  const getIniciais = (nome) => {
-    if (!nome) return 'US'
-    const partes = nome.trim().split(' ')
-    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
-    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-  }
-
-  const formatarData = (dataStr) => {
-    if (!dataStr) return 'N/A'
-    const dataPura = dataStr.split('T')[0]
-    const partes = dataPura.split('-')
-    if (partes.length === 3) {
-      const [ano, mes, dia] = partes
-      return `${dia}/${mes}/${ano}`
-    }
-    return dataStr
-  }
-
-  const carregarDadosIniciais = async () => {
-    setCarregando(true)
-    try {
-      try {
-        const resMe = await apiFetch('/usuarios/me')
-        if (resMe.ok) {
-          setPerfil(await resMe.json())
-        } else {
-          const token = localStorage.getItem('token')
-          if (token) {
-            const payload = JSON.parse(atob(token.split('.')[1]))
-            setPerfil({
-              nome: payload.nome || payload.sub?.split('@')[0] || 'Usuário',
-              cargo: payload.cargo || 'Corretor',
-            })
-          }
-        }
-      } catch (e) {}
-
-      const [resOfertas, resProdutores, resCompradores] = await Promise.all([
-        apiFetch('/ofertas/'),
-        apiFetch('/produtores/'),
-        apiFetch('/compradores/').catch(() => null),
-      ])
-
-      let listaProdutores = []
-      if (resProdutores && resProdutores.ok) {
-        listaProdutores = await resProdutores.json()
-        setProdutores(listaProdutores)
-        if (listaProdutores.length > 0) setProdutorId(listaProdutores[0].id)
-      }
-
-      if (resOfertas && resOfertas.ok) {
-        setOfertas(await resOfertas.json())
-      }
-
-      if (resCompradores && resCompradores.ok) {
-        setCompradores(await resCompradores.json())
-      }
-
-      if (listaProdutores.length > 0) {
-        const chamadasFazendas = listaProdutores.map(async (p) => {
-          const resF = await apiFetch(`/produtores/${p.id}/fazendas`)
-          if (resF.ok) return resF.json()
-          return []
-        })
-        const resultadosFazendas = await Promise.all(chamadasFazendas)
-        setTodasFazendas(resultadosFazendas.flat())
-      }
-    } catch (err) {
-      console.error('Erro ao carregar dados:', err)
-    } finally {
-      setCarregando(false)
-    }
-  }
-
-  useEffect(() => {
-    carregarDadosIniciais()
-  }, [])
-
-  useEffect(() => {
-    if (!produtorId) {
-      setFazendasModal([])
-      setFazendaId('')
-      return
-    }
-
-    async function carregarFazendasProdutor() {
-      setCarregandoFazendasModal(true)
-      try {
-        const res = await apiFetch(`/produtores/${produtorId}/fazendas`)
-        if (res.ok) {
-          const dados = await res.json()
-          setFazendasModal(dados)
-          if (dados.length > 0) setFazendaId(dados[0].id)
-          else setFazendaId('')
-        }
-      } catch (err) {
-        console.error('Erro ao buscar fazendas:', err)
-      } finally {
-        setCarregandoFazendasModal(false)
-      }
-    }
-
-    carregarFazendasProdutor()
-  }, [produtorId])
-
-  const getNomeProdutor = (id) => {
-    const p = produtores.find((item) => item.id === id)
-    return p ? p.nome : `Produtor #${id}`
-  }
-
-  const getNomeFazenda = (id) => {
-    const f = todasFazendas.find((item) => item.id === id)
-    return f ? f.nome : `Fazenda #${id}`
-  }
-
-  const toggleComprador = (id) => {
-    if (compradoresSelecionados.includes(id)) {
-      setCompradoresSelecionados(compradoresSelecionados.filter((item) => item !== id))
-    } else {
-      setCompradoresSelecionados([...compradoresSelecionados, id])
-    }
-  }
-
-  const selecionarTodosCompradores = () => {
-    if (compradoresSelecionados.length === compradores.length) {
-      setCompradoresSelecionados([])
-    } else {
-      setCompradoresSelecionados(compradores.map((c) => c.id))
-    }
-  }
-
-  const handleCriarOferta = async (e) => {
-    e.preventDefault()
-
-    if (!produtorId || !fazendaId) {
-      alert('Selecione o Produtor e a Fazenda!')
-      return
-    }
-
-    setDisparando(true)
-
-    try {
-      const payload = {
-        produtor_id: Number(produtorId),
-        fazenda_id: Number(fazendaId),
-        commodity: commodity,
-        volume: Number(volume),
-        tipo_medida: tipoMedida,
-        preco: Number(preco),
-        moeda: moeda,
-        data_entrega_embarque: dataEmbarque,
-        compradores_ids: compradoresSelecionados,
-      }
-
-      const resposta = await apiFetch('/ofertas/', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-
-      if (!resposta.ok) {
-        throw new Error('Falha ao criar oferta. Verifique os dados fornecidos.')
-      }
-
-      alert(
-        compradoresSelecionados.length > 0
-          ? 'Oferta cadastrada e mensagens de WhatsApp enviadas com sucesso!'
-          : 'Oferta cadastrada com sucesso!'
-      )
-
-      setModalAberto(false)
-      setVolume('')
-      setPreco('')
-      setTipoMedida('Sacas')
-      setCompradoresSelecionados([])
-      carregarDadosIniciais()
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setDisparando(false)
-    }
-  }
-
-  // Filtragem da lista
-  const ofertasFiltradas = ofertas.filter((o) => {
-    const termo = busca.toLowerCase()
-    const nomeP = getNomeProdutor(o.produtor_id).toLowerCase()
-    const nomeF = getNomeFazenda(o.fazenda_id).toLowerCase()
-    const comm = (o.commodity || '').toLowerCase()
-    return nomeP.includes(termo) || nomeF.includes(termo) || comm.includes(termo)
+  const editar = useEditarOferta({
+    onSuccess: () => {
+      toast.sucesso('Registro atualizado.')
+      setEdicao(null)
+    },
+    onError: (err) => toast.erro(err.message),
   })
 
-  const getNavLinkClass = ({ isActive }) =>
-    `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
-      isActive
-        ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
-        : 'text-on-surface-variant hover:bg-surface-variant/50'
-    }`
+  const excluir = useExcluirOferta({
+    onSuccess: () => toast.sucesso('Registro removido.'),
+    onError: (err) => toast.erro(err.message),
+  })
+
+  // O backend não permite trocar produtor nem fazenda na edição
+  const abrirEdicao = (o) =>
+    setEdicao({
+      id: o.id,
+      nomes: `${o.produtor_nome} · ${o.fazenda_nome}`,
+      form: {
+        tipo_oferta: o.tipo_oferta || 'Oferta',
+        commodity: o.commodity || 'Soja',
+        tipo_medida: o.tipo_medida || 'Sacas',
+        volume: o.volume ?? '',
+        preco: o.preco ?? '',
+        moeda: o.moeda || 'BRL',
+        data_entrega_embarque: (o.data_entrega_embarque || '').split('T')[0],
+      },
+    })
+
+  const mudarEdicao = (campo) => (e) =>
+    setEdicao((atual) => ({
+      ...atual,
+      form: { ...atual.form, [campo]: e.target.value },
+    }))
+
+  const salvarEdicao = (e) => {
+    e.preventDefault()
+    editar.mutate({
+      id: edicao.id,
+      tipo_oferta: edicao.form.tipo_oferta,
+      commodity: edicao.form.commodity,
+      volume: Number(edicao.form.volume),
+      tipo_medida: edicao.form.tipo_medida,
+      preco: Number(edicao.form.preco),
+      moeda: edicao.form.moeda,
+      data_entrega_embarque: edicao.form.data_entrega_embarque,
+    })
+  }
+
+  const removerOferta = async (o) => {
+    const confirmado = await confirmar({
+      titulo: `Excluir registro #${o.id}?`,
+      mensagem: `${o.produtor_nome} · ${o.fazenda_nome}. Ele sai do mural, mas continua no banco.`,
+      textoConfirmar: 'Excluir',
+      perigo: true,
+    })
+    if (confirmado) excluir.mutate(o.id)
+  }
+
+  const abaAtual = ABAS.find((a) => a.id === aba)
+
+  const alternarOrdem = (campo) =>
+    setOrdem((atual) =>
+      atual.campo === campo
+        ? { campo, direcao: atual.direcao === 'asc' ? 'desc' : 'asc' }
+        : { campo, direcao: 'asc' }
+    )
+
+  const ofertasVisiveis = useMemo(() => {
+    const termo = normalizarBusca(busca)
+
+    const filtradas = ofertas.filter((o) => {
+      // Registros antigos não têm tipo_oferta preenchido; contam como Oferta
+      if ((o.tipo_oferta || 'Oferta') !== aba) return false
+      if (!termo) return true
+      return [o.produtor_nome, o.fazenda_nome, o.commodity].some((campo) =>
+        normalizarBusca(campo).includes(termo)
+      )
+    })
+
+    const fator = ordem.direcao === 'asc' ? 1 : -1
+    return [...filtradas].sort((a, b) => comparar(a, b, ordem.campo) * fator)
+  }, [ofertas, aba, busca, ordem])
 
   return (
-    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-6 px-2 pt-4 shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-on-primary text-xl">
-                eco
-              </span>
-            </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">
-              Terra Nova
-            </h2>
-          </div>
-          <p className="font-body text-label-md text-on-surface-variant ml-10">
-            AgroCapital
-          </p>
+    <div className="space-y-8">
+      {/* Abas */}
+      <div className="flex justify-center">
+        <div className="inline-flex bg-surface-container rounded-full p-1 gap-1">
+          {ABAS.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setAba(a.id)}
+              className={`px-6 sm:px-8 py-3 rounded-full text-sm font-bold transition-all duration-300 cursor-pointer flex items-center gap-2 ${
+                aba === a.id
+                  ? 'bg-primary text-on-primary shadow-md'
+                  : 'text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">{a.icone}</span>
+              {a.texto}
+            </button>
+          ))}
         </div>
-
-        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          <NavLink to="/dashboard" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </NavLink>
-
-          <NavLink to="/fechamento" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">handshake</span>
-            Novo Fechamento
-          </NavLink>
-
-          <NavLink to="/cadastros" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">person_book</span>
-            Cadastros
-          </NavLink>
-
-          <NavLink to="/ofertas" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">campaign</span>
-            Ofertas
-          </NavLink>
-
-          <NavLink to="/relatorios" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">assessment</span>
-            Relatórios
-          </NavLink>
-
-          <NavLink to="/configuracoes" className={getNavLinkClass}>
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Configurações
-          </NavLink>
-        </nav>
-
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
-          <button
-            onClick={() => {
-              localStorage.removeItem('token')
-              navigate('/')
-            }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
-          >
-            <span className="material-symbols-outlined mr-3">logout</span>
-            Sair
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Wrapper */}
-      <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
-          <div className="flex justify-between items-center px-8 h-full w-full">
-            <h1 className="font-headline font-bold text-lg text-on-surface">
-              Mural de Ofertas e BIDs
-            </h1>
-
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setModalAberto(true)}
-                className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/90 transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-              >
-                <span className="material-symbols-outlined text-sm">add_alert</span>
-                Nova Oferta
-              </button>
-
-              <div className="flex items-center gap-3 ml-2 cursor-pointer">
-                <div className="text-right hidden md:block">
-                  <p className="text-sm font-bold text-on-surface leading-tight">
-                    {perfil.nome || 'Usuário'}
-                  </p>
-                  <p className="text-xs text-on-surface-variant capitalize">
-                    {perfil.cargo || 'Corretor'}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
-                  {getIniciais(perfil.nome || 'Usuário')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Canvas */}
-        <main className="flex-1 mt-16 p-8 overflow-y-auto bg-surface-container-lowest">
-          <div className="max-w-7xl mx-auto space-y-6 pb-16">
-            {/* Pill Tabs no Topo */}
-            <div className="flex justify-center mb-2">
-              <div className="inline-flex bg-surface-container p-1.5 rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
-                <button
-                  type="button"
-                  onClick={() => setAbaAtiva('mercado')}
-                  className={`px-8 py-3 rounded-full text-sm font-bold transition-all duration-300 cursor-pointer ${
-                    abaAtiva === 'mercado'
-                      ? 'bg-primary text-on-primary shadow-md'
-                      : 'text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  Mural Geral de Ofertas
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setAbaAtiva('bids')}
-                  className={`px-8 py-3 rounded-full text-sm font-bold transition-all duration-300 cursor-pointer flex items-center gap-2 ${
-                    abaAtiva === 'bids'
-                      ? 'bg-primary text-on-primary shadow-md'
-                      : 'text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">
-                    track_changes
-                  </span>
-                  Preços-Alvo / BIDs Firmes
-                </button>
-              </div>
-            </div>
-
-            {/* Cabeçalho da Aba */}
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-              <div>
-                <h2 className="text-3xl font-headline font-bold text-on-surface">
-                  {abaAtiva === 'mercado' ? 'Ofertas Disponíveis' : 'Painel de BIDs e Preços-Alvo'}
-                </h2>
-                <p className="text-secondary text-sm mt-1">
-                  {abaAtiva === 'mercado'
-                    ? 'Lotes de grãos cadastrados para negociação com as Tradings.'
-                    : 'Intenções de venda firmes registradas para cruzamento de mercado.'}
-                </p>
-              </div>
-
-              {/* Barra de Busca Rápida */}
-              <div className="relative w-full sm:w-72">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Buscar por produtor, fazenda..."
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  className="w-full bg-surface-bright border border-outline-variant/40 rounded-xl py-2 pl-9 pr-4 text-xs text-on-surface focus:ring-2 focus:ring-primary outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Tabela de Ofertas / BIDs */}
-            <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                {carregando ? (
-                  <div className="p-12 text-center text-secondary">
-                    Carregando dados do banco...
-                  </div>
-                ) : ofertasFiltradas.length === 0 ? (
-                  <div className="p-12 text-center text-secondary">
-                    Nenhum registro encontrado. Clique em "Nova Oferta" ou "Novo Fechamento" para adicionar.
-                  </div>
-                ) : (
-                  <table className="w-full text-left border-collapse font-body">
-                    <thead>
-                      <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Commodity</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Produtor</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">Fazenda de Origem</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">Volume</th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20 text-right">
-                          {abaAtiva === 'mercado' ? 'Preço Ofertado' : 'Preço Alvo'}
-                        </th>
-                        <th className="py-3 px-6 border-b border-outline-variant/20">
-                          {abaAtiva === 'mercado' ? 'Previsão Embarque' : 'Validade'}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-sm">
-                      {ofertasFiltradas.map((o) => {
-                        const isTonelada =
-                          (o.tipo_medida || '').toLowerCase() === 'toneladas'
-                        const unidadeVolume = isTonelada ? 'ton' : 'sacas'
-                        const unidadePreco = isTonelada ? 'ton' : 'sc'
-
-                        return (
-                          <tr
-                            key={o.id}
-                            className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
-                          >
-                            <td className="py-4 px-6 font-bold text-on-surface">
-                              {o.commodity || 'Soja'}
-                            </td>
-                            <td className="py-4 px-6 font-medium text-on-surface">
-                              {getNomeProdutor(o.produtor_id)}
-                            </td>
-                            <td className="py-4 px-6 text-on-surface">
-                              {getNomeFazenda(o.fazenda_id)}
-                            </td>
-                            <td className="py-4 px-6 font-bold text-on-surface font-mono text-right whitespace-nowrap">
-                              {Number(o.volume).toLocaleString('pt-BR')}{' '}
-                              <span className="text-xs font-normal text-secondary">
-                                {unidadeVolume}
-                              </span>
-                            </td>
-                            <td className="py-4 px-6 font-bold text-primary font-mono text-right whitespace-nowrap">
-                              {o.moeda === 'USD' ? '$' : 'R$'}{' '}
-                              {Number(o.preco).toFixed(2)}{' '}
-                              <span className="text-xs font-normal text-secondary">
-                                / {unidadePreco}
-                              </span>
-                            </td>
-                            <td className="py-4 px-6 text-on-surface whitespace-nowrap">
-                              {formatarData(o.data_entrega_embarque)}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
-        </main>
       </div>
 
-      {/* Modal: Nova Oferta */}
-      {modalAberto && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface-bright p-6 rounded-2xl shadow-xl max-w-2xl w-full space-y-6 border border-outline-variant/30 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">chat</span>
-                <h3 className="text-xl font-headline font-bold text-on-surface">
-                  Nova Oferta & Disparo WhatsApp
-                </h3>
-              </div>
-              <button
-                onClick={() => setModalAberto(false)}
-                className="text-secondary hover:text-on-surface cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
+      {/* Cabeçalho */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-headline font-semibold text-on-surface mb-1">
+            {abaAtual.titulo}
+          </h2>
+          <p className="text-secondary text-lg">{abaAtual.subtitulo}</p>
+        </div>
 
-            <form onSubmit={handleCriarOferta} className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Produtor Vendedor
-                  </label>
-                  <select
-                    required
-                    value={produtorId}
-                    onChange={(e) => setProdutorId(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer"
-                  >
-                    {produtores.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+        <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+          <div className="relative w-full sm:w-64">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder="Buscar por produtor ou fazenda..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface-container-low focus:ring-2 focus:ring-primary outline-none text-sm text-on-surface placeholder:text-secondary"
+            />
+          </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Fazenda de Origem
-                  </label>
-                  <select
-                    required
-                    disabled={carregandoFazendasModal || fazendasModal.length === 0}
-                    value={fazendaId}
-                    onChange={(e) => setFazendaId(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer disabled:opacity-50"
-                  >
-                    {carregandoFazendasModal ? (
-                      <option>Buscando fazendas...</option>
-                    ) : fazendasModal.length === 0 ? (
-                      <option>Nenhuma fazenda cadastrada</option>
-                    ) : (
-                      fazendasModal.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.nome}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
+          {/* O cadastro acontece no Novo Fechamento */}
+          <Link
+            to={abaAtual.destino}
+            className="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-bold hover:bg-primary/90 transition-colors shadow-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer whitespace-nowrap"
+          >
+            <span className="material-symbols-outlined">add</span>
+            {abaAtual.botao}
+          </Link>
+        </div>
+      </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
+      {/* Tabela */}
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
+        {!isLoading && !error && ofertasVisiveis.length > 0 && (
+          <div className="px-6 py-3 border-b border-outline-variant/20 flex items-center justify-between gap-3">
+            <p className="text-sm text-secondary font-body">
+              {formatarNumero(ofertasVisiveis.length)}{' '}
+              {aba === 'Bid' ? 'BID(s)' : 'oferta(s)'}
+            </p>
+            <p className="text-xs text-secondary font-body hidden sm:block">
+              Clique em um título de coluna para ordenar
+            </p>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <EstadoLista
+            carregando={isLoading}
+            erro={error}
+            vazio={ofertasVisiveis.length === 0}
+            onTentarNovamente={refetch}
+            skeleton={<SkeletonTabela colunas={7} />}
+            vazioProps={
+              busca
+                ? {
+                    icone: 'search_off',
+                    titulo: 'Nenhum registro corresponde à busca',
+                    descricao: `Nada encontrado para "${busca}" nesta aba.`,
+                  }
+                : {
+                    icone: aba === 'Bid' ? 'track_changes' : 'campaign',
+                    titulo:
+                      aba === 'Bid'
+                        ? 'Nenhum BID registrado'
+                        : 'Nenhuma oferta cadastrada',
+                    descricao:
+                      aba === 'Bid'
+                        ? 'Registre um preço-alvo no Novo Fechamento para cruzar com o mercado.'
+                        : 'Cadastre um lote no Novo Fechamento para enviar às tradings.',
+                    acao: (
+                      <Link
+                        to={abaAtual.destino}
+                        className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm hover:bg-primary/90 transition-colors cursor-pointer active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-lg">add</span>
+                        {abaAtual.botao}
+                      </Link>
+                    ),
+                  }
+            }
+          >
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container-low">
+                  <ThOrdenavel campo="commodity" ordem={ordem} aoOrdenar={alternarOrdem}>
                     Commodity
-                  </label>
-                  <select
-                    value={commodity}
-                    onChange={(e) => setCommodity(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-semibold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                  </ThOrdenavel>
+                  <ThOrdenavel
+                    campo="produtor_nome"
+                    ordem={ordem}
+                    aoOrdenar={alternarOrdem}
                   >
-                    <option value="Soja">Soja em Grãos</option>
-                    <option value="Milho">Milho em Grãos</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Unidade de Medida
-                  </label>
-                  <select
-                    value={tipoMedida}
-                    onChange={(e) => setTipoMedida(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-semibold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                    Produtor
+                  </ThOrdenavel>
+                  <ThOrdenavel
+                    campo="fazenda_nome"
+                    ordem={ordem}
+                    aoOrdenar={alternarOrdem}
                   >
-                    <option value="Sacas">Sacas (60kg)</option>
-                    <option value="Toneladas">Toneladas (ton)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Volume ({tipoMedida === 'Sacas' ? 'Sacas' : 'Toneladas'})
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
-                    placeholder="Ex: 5000"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Preço Unitário
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={preco}
-                    onChange={(e) => setPreco(e.target.value)}
-                    placeholder="Ex: 125.00"
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                    Moeda
-                  </label>
-                  <select
-                    value={moeda}
-                    onChange={(e) => setMoeda(e.target.value)}
-                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm font-bold focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+                    Fazenda de origem
+                  </ThOrdenavel>
+                  <ThOrdenavel
+                    campo="volume"
+                    ordem={ordem}
+                    aoOrdenar={alternarOrdem}
+                    alinhar="right"
                   >
-                    <option value="BRL">BRL (R$)</option>
-                    <option value="USD">USD ($)</option>
-                  </select>
-                </div>
-              </div>
+                    Volume
+                  </ThOrdenavel>
+                  <ThOrdenavel
+                    campo="preco"
+                    ordem={ordem}
+                    aoOrdenar={alternarOrdem}
+                    alinhar="right"
+                  >
+                    {abaAtual.rotuloPreco}
+                  </ThOrdenavel>
+                  <ThOrdenavel
+                    campo="data_entrega_embarque"
+                    ordem={ordem}
+                    aoOrdenar={alternarOrdem}
+                  >
+                    {abaAtual.rotuloData}
+                  </ThOrdenavel>
+                  <th className="py-3 px-6 border-b border-outline-variant/20 text-right text-xs font-bold uppercase text-secondary">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {ofertasVisiveis.map((o) => {
+                  const unidade =
+                    (o.tipo_medida || '').toLowerCase() === 'toneladas' ? 'ton' : 'sc'
+                  return (
+                    <tr
+                      key={o.id}
+                      className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
+                    >
+                      <td className="py-4 px-6 font-semibold text-on-surface">
+                        {o.commodity || 'Soja'}
+                      </td>
+                      <td className="py-4 px-6 text-on-surface">{o.produtor_nome}</td>
+                      <td className="py-4 px-6 text-secondary">{o.fazenda_nome}</td>
+                      <td className="py-4 px-6 font-mono text-on-surface text-right whitespace-nowrap">
+                        {formatarNumero(o.volume)}{' '}
+                        <span className="text-secondary text-xs">{unidade}</span>
+                      </td>
+                      <td className="py-4 px-6 font-mono font-bold text-primary text-right whitespace-nowrap">
+                        {formatarMoeda(o.preco, o.moeda)}
+                        <span className="text-secondary text-xs font-normal">
+                          {' '}
+                          /{unidade}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-secondary whitespace-nowrap">
+                        {formatarData(o.data_entrega_embarque)}
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => abrirEdicao(o)}
+                            title="Editar registro"
+                            className="p-2 rounded-lg text-secondary hover:text-primary hover:bg-primary-container/30 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">
+                              edit
+                            </span>
+                          </button>
+                          {ehAdmin && (
+                            <button
+                              onClick={() => removerOferta(o)}
+                              disabled={excluir.isPending}
+                              title="Excluir registro"
+                              className="p-2 rounded-lg text-secondary hover:text-error hover:bg-error-container/30 transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                delete
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </EstadoLista>
+        </div>
+      </div>
 
+      {/* Edição — produtor e fazenda são fixos, o backend não aceita trocá-los */}
+      <Modal
+        aberto={!!edicao}
+        titulo="Editar registro"
+        descricao={edicao?.nomes}
+        aoFechar={() => !editar.isPending && setEdicao(null)}
+      >
+        {edicao && (
+          <form onSubmit={salvarEdicao} className="space-y-4 font-body">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-secondary mb-1">
-                  Data Limite de Embarque
-                </label>
+                <label className={rotuloClasse}>Tipo</label>
+                <select
+                  value={edicao.form.tipo_oferta}
+                  onChange={mudarEdicao('tipo_oferta')}
+                  className={campoClasse}
+                >
+                  <option value="Oferta">Oferta de venda</option>
+                  <option value="Bid">BID / preço-alvo</option>
+                </select>
+              </div>
+              <div>
+                <label className={rotuloClasse}>Commodity</label>
+                <select
+                  value={edicao.form.commodity}
+                  onChange={mudarEdicao('commodity')}
+                  className={campoClasse}
+                >
+                  <option value="Soja">Soja</option>
+                  <option value="Milho">Milho</option>
+                </select>
+              </div>
+              <div>
+                <label className={rotuloClasse}>Unidade</label>
+                <select
+                  value={edicao.form.tipo_medida}
+                  onChange={mudarEdicao('tipo_medida')}
+                  className={campoClasse}
+                >
+                  <option value="Sacas">Sacas</option>
+                  <option value="Toneladas">Toneladas</option>
+                </select>
+              </div>
+              <div>
+                <label className={rotuloClasse}>Volume</label>
                 <input
-                  type="date"
+                  type="number"
                   required
-                  value={dataEmbarque}
-                  onChange={(e) => setDataEmbarque(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  min="0"
+                  step="any"
+                  value={edicao.form.volume}
+                  onChange={mudarEdicao('volume')}
+                  className={campoClasse}
                 />
               </div>
-
-              <div className="border-t border-outline-variant/20 pt-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-bold text-sm text-on-surface">
-                      Enviar no WhatsApp dos Compradores?
-                    </h4>
-                    <p className="text-xs text-secondary">
-                      Marque quem receberá a mensagem automática da oferta.
-                    </p>
-                  </div>
-                  {compradores.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={selecionarTodosCompradores}
-                      className="text-xs text-primary font-bold hover:underline cursor-pointer"
-                    >
-                      {compradoresSelecionados.length === compradores.length
-                        ? 'Desmarcar Todos'
-                        : 'Selecionar Todos'}
-                    </button>
-                  )}
-                </div>
-
-                <div className="max-h-40 overflow-y-auto space-y-2 border border-outline-variant/30 rounded-xl p-3 bg-surface-container-low">
-                  {compradores.length === 0 ? (
-                    <p className="text-xs text-secondary text-center py-2">
-                      Nenhum comprador cadastrado no sistema.
-                    </p>
-                  ) : (
-                    compradores.map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex items-center justify-between p-2 hover:bg-surface-bright rounded-lg cursor-pointer text-sm"
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={compradoresSelecionados.includes(c.id)}
-                            onChange={() => toggleComprador(c.id)}
-                            className="w-4 h-4 text-primary rounded focus:ring-primary"
-                          />
-                          <span className="font-medium text-on-surface">{c.nome}</span>
-                        </div>
-                        <span className="text-xs text-secondary font-mono">
-                          {c.telefone}
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
+              <div>
+                <label className={rotuloClasse}>Preço</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={edicao.form.preco}
+                  onChange={mudarEdicao('preco')}
+                  className={campoClasse}
+                />
               </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/20">
-                <button
-                  type="button"
-                  onClick={() => setModalAberto(false)}
-                  className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low cursor-pointer"
+              <div>
+                <label className={rotuloClasse}>Moeda</label>
+                <select
+                  value={edicao.form.moeda}
+                  onChange={mudarEdicao('moeda')}
+                  className={campoClasse}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={disparando || fazendasModal.length === 0}
-                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer flex items-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-sm">send</span>
-                  {disparando ? 'Disparando WhatsApp...' : 'Criar & Disparar'}
-                </button>
+                  <option value="BRL">BRL (R$)</option>
+                  <option value="USD">USD ($)</option>
+                </select>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+
+            <div>
+              <label className={rotuloClasse}>
+                {edicao.form.tipo_oferta === 'Bid' ? 'Validade' : 'Data de embarque'}
+              </label>
+              <input
+                type="date"
+                required
+                value={edicao.form.data_entrega_embarque}
+                onChange={mudarEdicao('data_entrega_embarque')}
+                className={campoClasse}
+              />
+            </div>
+
+            <p className="text-xs text-secondary">
+              Para mudar o produtor ou a fazenda, exclua este registro e crie outro.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={editar.isPending}
+                onClick={() => setEdicao(null)}
+                className="px-5 py-2.5 rounded-xl border border-outline-variant text-secondary font-bold hover:bg-surface-container-low cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={editar.isPending}
+                className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer active:scale-95 transition-all"
+              >
+                {editar.isPending ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   )
 }

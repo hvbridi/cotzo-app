@@ -1,130 +1,75 @@
-import { useState, useEffect } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import { useContratosEnriquecidos, useUsuarios } from '../services/queries'
 import { apiFetch } from '../services/api'
+import {
+  formatarData,
+  formatarMoeda,
+  formatarNumero,
+} from '../utils/formatters'
+import { EstadoLista, SkeletonTabela } from '../components/ui/PageState'
+import { campoClasse, rotuloClasse } from '../components/ui/Modal'
+import { useToast } from '../components/ui/Feedback'
+
+const FILTROS_VAZIOS = {
+  dataInicio: '',
+  dataFim: '',
+  corretorId: 'Todos',
+  commodity: 'Todas',
+}
 
 export default function Relatorios() {
-  const navigate = useNavigate()
-
-  // Perfil do Usuário Logado
-  const [perfil, setPerfil] = useState({
-    nome: '',
-    cargo: '',
-  })
-
-  // Dados do Banco
-  const [contratos, setContratos] = useState([])
-  const [usuarios, setUsuarios] = useState([])
-  const [produtores, setProdutores] = useState([])
-  const [carregando, setCarregando] = useState(true)
+  const toast = useToast()
+  const [filtros, setFiltros] = useState(FILTROS_VAZIOS)
   const [exportando, setExportando] = useState(false)
-  const [erro, setErro] = useState('')
 
-  // Estados dos Filtros
-  const [dataInicio, setDataInicio] = useState('')
-  const [dataFim, setDataFim] = useState('')
-  const [corretorId, setCorretorId] = useState('Todos')
-  const [commodity, setCommodity] = useState('Todas')
+  // Já vem com produtor_nome e corretor_nome resolvidos — antes a página
+  // baixava /usuarios/ e /produtores/ só para traduzir IDs em nomes.
+  const { data: contratos = [], isLoading, error, refetch } = useContratosEnriquecidos()
+  const { data: usuarios = [] } = useUsuarios()
 
-  const getIniciais = (nome) => {
-    if (!nome) return 'LR'
-    const partes = nome.trim().split(' ')
-    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase()
-    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-  }
+  const mudar = (campo) => (e) =>
+    setFiltros((atual) => ({ ...atual, [campo]: e.target.value }))
 
-  // Formatação de data segura (DD/MM/AAAA)
-  const formatarData = (dataStr) => {
-    if (!dataStr) return 'N/A'
-    const dataPura = dataStr.split('T')[0]
-    const partes = dataPura.split('-')
-    if (partes.length === 3) {
-      const [ano, mes, dia] = partes
-      return `${dia}/${mes}/${ano}`
-    }
-    return dataStr
-  }
-
-  // Carregar dados iniciais do banco e perfil
-  useEffect(() => {
-    async function carregarDados() {
-      setCarregando(true)
-      try {
-        // 1. Carrega Perfil do Usuário Logado
-        try {
-          const resMe = await apiFetch('/usuarios/me')
-          if (resMe.ok) {
-            const meData = await resMe.json()
-            setPerfil(meData)
-          } else {
-            const token = localStorage.getItem('token')
-            if (token) {
-              const payloadBase64 = token.split('.')[1]
-              const payloadJson = JSON.parse(atob(payloadBase64))
-              const emailLogado = payloadJson.sub || ''
-              const resListaU = await apiFetch('/usuarios/')
-              if (resListaU.ok) {
-                const listaU = await resListaU.json()
-                const uEncontrado = listaU.find(
-                  (item) => item.email.toLowerCase() === emailLogado.toLowerCase()
-                )
-                if (uEncontrado) setPerfil(uEncontrado)
-              }
-            }
-          }
-        } catch (errPerfil) {
-          console.error('Erro ao buscar perfil:', errPerfil)
-        }
-
-        // 2. Carrega Contratos, Produtores e Usuários (com catch seguro para Corretores)
-        const [resContratos, resUsuarios, resProdutores] = await Promise.all([
-          apiFetch('/contratos/'),
-          apiFetch('/usuarios/').catch(() => ({ ok: false })),
-          apiFetch('/produtores/'),
-        ])
-
-        if (resContratos.ok) setContratos(await resContratos.json())
-        if (resUsuarios && resUsuarios.ok) setUsuarios(await resUsuarios.json())
-        if (resProdutores.ok) setProdutores(await resProdutores.json())
-      } catch (err) {
-        setErro('Erro ao carregar relatórios do banco de dados.')
-      } finally {
-        setCarregando(false)
+  const contratosFiltrados = useMemo(() => {
+    return contratos.filter((c) => {
+      if (filtros.dataInicio && c.data_fechamento < filtros.dataInicio) return false
+      if (filtros.dataFim && c.data_fechamento > filtros.dataFim) return false
+      if (
+        filtros.corretorId !== 'Todos' &&
+        String(c.usuario_id) !== String(filtros.corretorId)
+      ) {
+        return false
       }
-    }
+      if (filtros.commodity !== 'Todas' && c.commodity !== filtros.commodity) {
+        return false
+      }
+      return true
+    })
+  }, [contratos, filtros])
 
-    carregarDados()
-  }, [])
+  const totais = useMemo(() => {
+    return contratosFiltrados.reduce(
+      (acc, c) => ({
+        volume: acc.volume + (Number(c.volume) || 0),
+        valor: acc.valor + (Number(c.valor_total) || 0),
+        comissao: acc.comissao + (Number(c.valor_comissao) || 0),
+      }),
+      { volume: 0, valor: 0, comissao: 0 }
+    )
+  }, [contratosFiltrados])
 
-  // Mapeadores auxiliares para pegar Nome por ID
-  const getNomeCorretor = (id) => {
-    const user = usuarios.find((u) => u.id === id)
-    return user ? user.nome : `Corretor #${id}`
-  }
+  const temFiltroAtivo =
+    filtros.dataInicio ||
+    filtros.dataFim ||
+    filtros.corretorId !== 'Todos' ||
+    filtros.commodity !== 'Todas'
 
-  const getNomeProdutor = (id) => {
-    const prod = produtores.find((p) => p.id === id)
-    return prod ? prod.nome : `Produtor #${id}`
-  }
-
-  // Filtragem dos contratos na memória
-  const contratosFiltrados = contratos.filter((c) => {
-    if (dataInicio && c.data_fechamento < dataInicio) return false
-    if (dataFim && c.data_fechamento > dataFim) return false
-    if (corretorId !== 'Todos' && String(c.usuario_id) !== String(corretorId)) {
-      return false
-    }
-    if (commodity !== 'Todas' && c.commodity !== commodity) return false
-    return true
-  })
-
-  // Exportação para Excel via Backend
-  const handleExportarExcel = async () => {
+  const exportarExcel = async () => {
     setExportando(true)
     try {
       const resposta = await apiFetch('/exportar-excel/')
-      if (!resposta.ok) {
-        throw new Error('Erro ao gerar o arquivo Excel no servidor.')
-      }
+      if (!resposta.ok) throw new Error('O servidor não conseguiu gerar o arquivo.')
 
       const blob = await resposta.blob()
       const url = window.URL.createObjectURL(blob)
@@ -135,355 +80,261 @@ export default function Relatorios() {
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
+      toast.sucesso('Planilha baixada.')
     } catch (err) {
-      alert(err.message)
+      toast.erro(err.message)
     } finally {
       setExportando(false)
     }
   }
 
-const getNavLinkClass = ({ isActive }) =>
-  `flex items-center px-4 py-3 rounded-lg font-body text-label-lg active:scale-95 transition-all duration-150 ${
-    isActive
-      ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm'
-      : 'text-on-surface-variant hover:bg-surface-variant/50'
-  }`
-
   return (
-    <div className="bg-background text-on-background antialiased h-screen overflow-hidden flex animate-fade-in font-body">
-      {/* SideNavBar Fixa */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-screen flex-col p-4 border-r border-outline-variant/20 bg-surface-container dark:bg-surface-container-lowest w-72 z-20">
-        <div className="mb-6 px-2 pt-4 shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-on-primary text-xl">
-                eco
-              </span>
-            </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">
-              Terra Nova
-            </h2>
-          </div>
-          <p className="font-body text-label-md text-on-surface-variant ml-10">
-            AgroCapital
+    <div className="space-y-8">
+      {/* Cabeçalho */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="font-headline text-3xl font-semibold text-on-background mb-1">
+            Relatórios
+          </h2>
+          <p className="text-secondary text-lg">
+            Filtre os fechamentos por período, corretor e commodity.
           </p>
         </div>
+        <button
+          onClick={exportarExcel}
+          disabled={exportando}
+          className="bg-surface border border-primary text-primary hover:bg-primary-container/20 font-bold py-2.5 px-6 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-50 active:scale-95 shrink-0 self-start md:self-auto"
+        >
+          <span className="material-symbols-outlined text-base">download</span>
+          {exportando ? 'Gerando planilha...' : 'Exportar Excel'}
+        </button>
+      </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-  <NavLink to="/dashboard" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">dashboard</span>
-    Dashboard
-  </NavLink>
-
-  <NavLink to="/fechamento" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">handshake</span>
-    Novo Fechamento
-  </NavLink>
-
-  <NavLink to="/cadastros" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">person_book</span>
-    Cadastros
-  </NavLink>
-
-  <NavLink to="/ofertas" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">campaign</span>
-    Ofertas
-  </NavLink>
-
-  <NavLink to="/relatorios" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">assessment</span>
-    Relatórios
-  </NavLink>
-
-  <NavLink to="/configuracoes" className={getNavLinkClass}>
-    <span className="material-symbols-outlined mr-3">settings</span>
-    Configurações
-  </NavLink>
-</nav>
-
-        <div className="mt-auto space-y-1 pt-4 border-t border-outline-variant/20 shrink-0">
-          <button
-            onClick={() => {
-              localStorage.removeItem('token')
-              navigate('/')
-            }}
-            className="w-full flex items-center px-4 py-3 text-on-surface-variant hover:bg-surface-variant/50 rounded-lg font-body text-label-lg active:scale-95 transition-transform duration-150 text-left cursor-pointer"
-          >
-            <span className="material-symbols-outlined mr-3">logout</span>
-            Sair
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Wrapper */}
-      <div className="flex-1 flex flex-col h-full md:ml-72 overflow-hidden">
-        {/* TopAppBar com Perfil Dinâmico */}
-        <header className="fixed top-0 right-0 h-16 z-40 bg-background/80 dark:bg-background/80 backdrop-blur-md border-b border-outline-variant/20 md:left-72">
-          <div className="flex justify-between items-center px-8 h-full w-full">
-            <div className="flex-1 flex items-center">
-              <div className="relative w-64">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">
-                  search
-                </span>
-                <input
-                  className="w-full bg-surface-container rounded-full py-1.5 pl-9 pr-4 text-sm border-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-secondary focus:outline-none"
-                  placeholder="Buscar..."
-                  type="text"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
-                <span className="material-symbols-outlined">notifications</span>
-              </button>
-              <button className="text-secondary hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-container-low">
-                <span className="material-symbols-outlined">settings</span>
-              </button>
-
-              {/* Badge do Usuário Logado */}
-              <div className="flex items-center gap-3 ml-2 cursor-pointer">
-                <div className="text-right hidden md:block">
-                  <p className="text-sm font-bold text-on-surface leading-tight">
-                    {perfil.nome || 'Luís miguel Ravanello'}
-                  </p>
-                  <p className="text-xs text-on-surface-variant capitalize">
-                    {perfil.cargo || 'Admin'}
-                  </p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-[#dbd8ce] flex items-center justify-center font-bold text-xs text-[#4a5043] shrink-0 border border-outline-variant/30">
-                  {getIniciais(perfil.nome || 'Luís miguel Ravanello')}
-                </div>
-              </div>
-            </div>
+      {/* Filtros */}
+      <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className={rotuloClasse}>De</label>
+            <input
+              type="date"
+              value={filtros.dataInicio}
+              onChange={mudar('dataInicio')}
+              className={campoClasse}
+            />
           </div>
-        </header>
 
-        {/* Canvas / Main Content */}
-        <main className="flex-1 mt-16 p-8 overflow-y-auto max-w-7xl w-full">
-          <div className="space-y-8 pb-16">
-            {/* Page Header & Breadcrumb */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-label text-on-surface-variant">
-                <Link
-                  to="/dashboard"
-                  className="hover:text-primary transition-colors"
+          <div>
+            <label className={rotuloClasse}>Até</label>
+            <input
+              type="date"
+              value={filtros.dataFim}
+              onChange={mudar('dataFim')}
+              className={campoClasse}
+            />
+          </div>
+
+          <div>
+            <label className={rotuloClasse}>Commodity</label>
+            <select
+              value={filtros.commodity}
+              onChange={mudar('commodity')}
+              className={campoClasse}
+            >
+              <option value="Todas">Todas</option>
+              <option value="Soja">Soja</option>
+              <option value="Milho">Milho</option>
+            </select>
+          </div>
+
+          {/* Corretor recebe 403 em /usuarios/, então o filtro só aparece para quem pode */}
+          {usuarios.length > 0 ? (
+            <div>
+              <label className={rotuloClasse}>Corretor</label>
+              <select
+                value={filtros.corretorId}
+                onChange={mudar('corretorId')}
+                className={campoClasse}
+              >
+                <option value="Todos">Todos</option>
+                {usuarios.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-end">
+              {temFiltroAtivo && (
+                <button
+                  onClick={() => setFiltros(FILTROS_VAZIOS)}
+                  className="w-full py-3 rounded-xl bg-surface-container-high text-on-surface hover:bg-surface-variant font-semibold text-sm transition-colors cursor-pointer"
                 >
-                  Dashboard
-                </Link>
-                <span className="material-symbols-outlined text-base">
-                  chevron_right
-                </span>
-                <span className="text-primary font-medium">Relatórios</span>
-              </div>
-              <h2 className="font-headline text-3xl font-bold text-on-surface">
-                Relatórios de Fechamentos
-              </h2>
+                  Limpar filtros
+                </button>
+              )}
             </div>
+          )}
+        </div>
 
-            {/* Filter Card */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/30">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
-                {/* Período */}
-                <div className="space-y-2 lg:col-span-1">
-                  <label className="block font-label text-sm font-semibold text-on-surface-variant">
-                    Período
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3"
-                        type="date"
-                        value={dataInicio}
-                        onChange={(e) => setDataInicio(e.target.value)}
-                      />
-                    </div>
-                    <span className="text-on-surface-variant">até</span>
-                    <div className="relative flex-1">
-                      <input
-                        className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3"
-                        type="date"
-                        value={dataFim}
-                        onChange={(e) => setDataFim(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
+        {usuarios.length > 0 && temFiltroAtivo && (
+          <button
+            onClick={() => setFiltros(FILTROS_VAZIOS)}
+            className="mt-4 text-sm font-bold text-primary hover:underline cursor-pointer"
+          >
+            Limpar filtros
+          </button>
+        )}
+      </div>
 
-                {/* Corretor */}
-                <div className="space-y-2">
-                  <label className="block font-label text-sm font-semibold text-on-surface-variant">
-                    Corretor
-                  </label>
-                  <select
-                    disabled={usuarios.length === 0}
-                    className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3 appearance-none cursor-pointer disabled:opacity-60"
-                    value={corretorId}
-                    onChange={(e) => setCorretorId(e.target.value)}
-                  >
-                    <option value="Todos">
-                      {usuarios.length === 0 ? 'Meus Contratos' : 'Todos os Corretores'}
-                    </option>
-                    {usuarios.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Commodity */}
-                <div className="space-y-2">
-                  <label className="block font-label text-sm font-semibold text-on-surface-variant">
-                    Commodity
-                  </label>
-                  <select
-                    className="w-full bg-surface-container-low border-none rounded-lg text-body-md font-body focus:ring-2 focus:ring-primary text-on-surface py-2.5 px-3 appearance-none cursor-pointer"
-                    value={commodity}
-                    onChange={(e) => setCommodity(e.target.value)}
-                  >
-                    <option value="Todas">Todas as Commodities</option>
-                    <option value="Soja">Soja</option>
-                    <option value="Milho">Milho</option>
-                    <option value="Algodão">Algodão</option>
-                  </select>
-                </div>
-
-                {/* Botões */}
-                <div className="flex items-center gap-3 lg:justify-end h-[44px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDataInicio('')
-                      setDataFim('')
-                      setCorretorId('Todos')
-                      setCommodity('Todas')
-                    }}
-                    className="flex-1 lg:flex-none bg-surface-container-high text-on-surface hover:bg-surface-variant font-label font-semibold py-2.5 px-4 rounded-lg transition-colors shadow-sm cursor-pointer text-sm"
-                  >
-                    Limpar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportarExcel}
-                    disabled={exportando}
-                    className="flex-1 lg:flex-none bg-surface border border-primary text-primary hover:bg-primary-container/20 font-label font-semibold py-2.5 px-6 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-sm">
-                      download
-                    </span>
-                    {exportando ? 'Exportando...' : 'Exportar Excel'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Data Grid Section */}
-            <div className="bg-surface-container-lowest rounded-xl shadow-[0_4px_20px_rgba(46,50,48,0.06)] border border-outline-variant/30 overflow-hidden">
-              <div className="overflow-x-auto">
-                {carregando ? (
-                  <div className="p-12 text-center text-secondary font-body">
-                    Carregando relatórios do banco de dados...
-                  </div>
-                ) : erro ? (
-                  <div className="p-12 text-center text-error font-body">
-                    {erro}
-                  </div>
-                ) : contratosFiltrados.length === 0 ? (
-                  <div className="p-12 text-center text-secondary font-body">
-                    Nenhum contrato encontrado para os filtros selecionados.
-                  </div>
-                ) : (
-                  <table className="w-full text-left font-body border-collapse">
-                    <thead className="bg-surface-container/50 border-b border-surface-variant/50 text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-                      <tr>
-                        <th className="px-6 py-4">Data</th>
-                        <th className="px-6 py-4">Corretor</th>
-                        <th className="px-6 py-4">Produtor</th>
-                        <th className="px-6 py-4">Commodity</th>
-                        <th className="px-6 py-4 text-right">Volume</th>
-                        <th className="px-6 py-4 text-right">Preço Unit.</th>
-                        <th className="px-6 py-4 text-center">Moeda</th>
-                        <th className="px-6 py-4">Entrega</th>
-                        <th className="px-6 py-4 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-variant/30 text-sm text-on-surface">
-                      {contratosFiltrados.map((c) => (
-                        <tr
-                          key={c.id}
-                          className="hover:bg-surface-container-low/50 transition-colors"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap font-medium">
-                            {formatarData(c.data_fechamento)}
-                          </td>
-                          <td className="px-6 py-4 font-medium whitespace-nowrap">
-                            {getNomeCorretor(c.usuario_id)}
-                          </td>
-                          <td className="px-6 py-4 font-medium whitespace-nowrap">
-                            {getNomeProdutor(c.produtor_id)}
-                          </td>
-                          <td className="px-6 py-4 font-semibold">
-                            {c.commodity}
-                          </td>
-                          <td className="px-6 py-4 text-right font-mono whitespace-nowrap">
-                            {Number(c.volume).toLocaleString('pt-BR')}{' '}
-                            <span className="text-xs text-secondary font-normal">
-                              {c.tipo_medida}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right font-mono whitespace-nowrap">
-                            {c.moeda === 'USD' ? '$' : 'R$'}{' '}
-                            {Number(c.preco_unitario).toFixed(2)}
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                c.moeda === 'USD'
-                                  ? 'bg-primary-container/40 text-on-primary-container'
-                                  : 'bg-tertiary-container/30 text-tertiary'
-                              }`}
-                            >
-                              {c.moeda || 'BRL'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-secondary">
-                            {formatarData(c.data_entrega)}
-                          </td>
-                          <td className="px-6 py-4 text-right whitespace-nowrap">
-                            <Link
-                              to={`/detalhes-contrato?id=${c.id}`}
-                              className="text-primary hover:text-primary/80 font-bold text-xs inline-flex items-center gap-1 transition-colors"
-                            >
-                              Ver mais
-                              <span className="material-symbols-outlined text-sm">
-                                chevron_right
-                              </span>
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Tabela Footer / Contador */}
-              <div className="bg-surface-container-lowest border-t border-surface-variant/50 px-6 py-4 flex items-center justify-between text-sm text-on-surface-variant">
-                <div>
-                  Mostrando{' '}
-                  <span className="font-semibold text-on-surface">
-                    {contratosFiltrados.length}
-                  </span>{' '}
-                  de{' '}
-                  <span className="font-semibold text-on-surface">
-                    {contratos.length}
-                  </span>{' '}
-                  contratos emitidos
-                </div>
-              </div>
-            </div>
+      {/* Totais do período filtrado */}
+      {!isLoading && !error && contratosFiltrados.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-surface-container-low rounded-xl p-4 border border-outline-variant/20">
+            <p className="text-xs font-bold uppercase text-secondary tracking-wide">
+              Volume no período
+            </p>
+            <p className="text-xl font-mono font-bold text-on-surface mt-1">
+              {formatarNumero(totais.volume)} sc
+            </p>
           </div>
-        </main>
+          <div className="bg-surface-container-low rounded-xl p-4 border border-outline-variant/20">
+            <p className="text-xs font-bold uppercase text-secondary tracking-wide">
+              Valor negociado
+            </p>
+            <p className="text-xl font-mono font-bold text-primary mt-1">
+              {formatarMoeda(totais.valor)}
+            </p>
+          </div>
+          <div className="bg-surface-container-low rounded-xl p-4 border border-outline-variant/20">
+            <p className="text-xs font-bold uppercase text-secondary tracking-wide">
+              Comissão no período
+            </p>
+            <p className="text-xl font-mono font-bold text-tertiary mt-1">
+              {formatarMoeda(totais.comissao)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela */}
+      <div className="bg-surface-bright rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-outline-variant/20 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-headline font-bold text-lg text-on-surface">
+            Fechamentos
+          </h3>
+          {!isLoading && !error && (
+            <p className="text-sm text-secondary font-body">
+              {formatarNumero(contratosFiltrados.length)} de{' '}
+              {formatarNumero(contratos.length)}
+            </p>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <EstadoLista
+            carregando={isLoading}
+            erro={error}
+            vazio={contratosFiltrados.length === 0}
+            onTentarNovamente={refetch}
+            skeleton={<SkeletonTabela colunas={8} />}
+            vazioProps={
+              temFiltroAtivo
+                ? {
+                    icone: 'filter_alt_off',
+                    titulo: 'Nenhum contrato no filtro',
+                    descricao:
+                      'Nenhum fechamento corresponde a esta combinação. Ajuste o período ou limpe os filtros.',
+                    acao: (
+                      <button
+                        onClick={() => setFiltros(FILTROS_VAZIOS)}
+                        className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm hover:bg-primary/90 transition-colors cursor-pointer active:scale-95"
+                      >
+                        Limpar filtros
+                      </button>
+                    ),
+                  }
+                : {
+                    icone: 'handshake',
+                    titulo: 'Nenhum contrato registrado',
+                    descricao: 'Registre o primeiro fechamento para gerar relatórios.',
+                    acao: (
+                      <Link
+                        to="/fechamento"
+                        className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm hover:bg-primary/90 transition-colors cursor-pointer active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-lg">add</span>
+                        Novo fechamento
+                      </Link>
+                    ),
+                  }
+            }
+          >
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container-low text-secondary text-xs font-bold uppercase">
+                  <th className="px-6 py-4 border-b border-outline-variant/20">Data</th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20">
+                    Corretor
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20">
+                    Produtor
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20">
+                    Commodity
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20 text-right">
+                    Volume
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20 text-right">
+                    Preço unit.
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20">
+                    Entrega
+                  </th>
+                  <th className="px-6 py-4 border-b border-outline-variant/20 text-right">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {contratosFiltrados.map((c) => (
+                  <tr
+                    key={c.id}
+                    className="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors"
+                  >
+                    <td className="px-6 py-4 text-on-surface whitespace-nowrap">
+                      {formatarData(c.data_fechamento)}
+                    </td>
+                    <td className="px-6 py-4 text-secondary">{c.corretor_nome}</td>
+                    <td className="px-6 py-4 font-medium text-on-surface">
+                      {c.produtor_nome}
+                    </td>
+                    <td className="px-6 py-4 text-on-surface">{c.commodity}</td>
+                    <td className="px-6 py-4 font-mono text-on-surface text-right whitespace-nowrap">
+                      {formatarNumero(c.volume)}{' '}
+                      <span className="text-secondary text-xs">{c.tipo_medida}</span>
+                    </td>
+                    <td className="px-6 py-4 font-mono text-on-surface text-right whitespace-nowrap">
+                      {formatarMoeda(c.preco_unitario, c.moeda)}
+                    </td>
+                    <td className="px-6 py-4 text-secondary whitespace-nowrap">
+                      {formatarData(c.data_entrega)}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link
+                        to={`/detalhes-contrato?id=${c.id}`}
+                        className="text-primary hover:underline font-bold text-sm cursor-pointer"
+                      >
+                        Ver detalhes
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </EstadoLista>
+        </div>
       </div>
     </div>
   )

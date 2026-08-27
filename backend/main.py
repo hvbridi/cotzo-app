@@ -196,7 +196,7 @@ def ler_usuarios(db: Session = Depends(get_session), usuario_logado=Depends(usua
     usuarios = db.exec(select(Usuario).where(Usuario.ativo == True)).all()
     return [u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios]
 
-@app.get('/usuarios/me/', tags=["Usuario"])
+@app.get('/usuarios/me', tags=["Usuario"])
 def ler_usuario_atual(db: Session = Depends(get_session), usuario_logado=Depends(usuario_atual)):
     usuario_db = obter_usuario_db(usuario_logado,db)
     if not usuario_db or not usuario_db.ativo:
