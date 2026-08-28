@@ -1197,77 +1197,224 @@ def exportar_dados_para_excel(
     cargo = usuario_logado.get("cargo")
     
     # 1. Define quais tabelas o usuário quer exportar
-    # Se ele mandar "?tabelas=fazendas,contratos", o sistema separa numa lista.
     if tabelas:
         tabelas_solicitadas = [t.strip().lower() for t in tabelas.split(",")]
     else:
-        # Se não especificar nada, exporta todas as abas que ele tem direito
-        tabelas_solicitadas = ["usuarios", "produtores", "fazendas", "empresas", "contratos", "ofertas"]
+        tabelas_solicitadas = ["usuarios", "contratos", "ofertas", "produtores", "fazendas", "empresas", "compradores"]
         
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         sheets_escritas = 0
         
-        # 👤 USUÁRIOS (Corretor nunca pode exportar a lista de usuários da empresa)
+        # 👤 USUÁRIOS (Apenas Admin e Gerente)
         if "usuarios" in tabelas_solicitadas and cargo in ["admin", "gerente"]:
             usuarios = db.exec(select(Usuario).where(Usuario.ativo == True)).all()
-            df = pd.DataFrame([u.model_dump(exclude={"senha_hash", "reset_token", "reset_token_expires"}) for u in usuarios])
+            dados_usuarios = []
+            for u in usuarios:
+                dados_usuarios.append({
+                    "ID": u.id,
+                    "Nome": u.nome,
+                    "E-mail": u.email,
+                    "Telefone": u.telefone,
+                    "Cargo": u.cargo.capitalize() if u.cargo else "N/A",
+                    "Comissão Padrão (%)": u.comissao_padrao or 0.0,
+                })
+            df = pd.DataFrame(dados_usuarios)
             if not df.empty:
-                df.to_excel(writer, sheet_name='Usuarios', index=False)
+                df.to_excel(writer, sheet_name='Usuários', index=False)
                 sheets_escritas += 1
 
         # 📄 CONTRATOS
         if "contratos" in tabelas_solicitadas:
-            query = select(Contrato).where(Contrato.ativo == True)
-            if cargo == "corretor": query = query.where(Contrato.usuario_id == usuario_db.id)
-            contratos = db.exec(query).all()
-            df = pd.DataFrame([c.model_dump() for c in contratos])
+            query = (
+                select(
+                    Contrato,
+                    Produtor.nome.label("produtor_nome"),
+                    Fazenda.nome.label("fazenda_nome"),
+                    Empresa.razao_social.label("empresa_razao_social"),
+                    Usuario.nome.label("corretor_nome")
+                )
+                .outerjoin(Produtor, Contrato.produtor_id == Produtor.id)
+                .outerjoin(Fazenda, Contrato.fazenda_id == Fazenda.id)
+                .outerjoin(Empresa, Contrato.empresa_id == Empresa.id)
+                .outerjoin(Usuario, Contrato.usuario_id == Usuario.id)
+                .where(Contrato.ativo == True)
+            )
+            if cargo == "corretor":
+                query = query.where(Contrato.usuario_id == usuario_db.id)
+            resultados = db.exec(query).all()
+            
+            dados_contratos = []
+            for c, p_nome, f_nome, e_nome, u_nome in resultados:
+                dados_contratos.append({
+                    "Nº Contrato": c.id,
+                    "Data Fechamento": c.data_fechamento.strftime('%d/%m/%Y') if c.data_fechamento else "N/A",
+                    "Status": c.status,
+                    "Corretor Responsável": u_nome or "N/A",
+                    "Produtor": p_nome or "N/A",
+                    "Fazenda de Origem": f_nome or "N/A",
+                    "Comprador (Trading)": e_nome or "N/A",
+                    "Produto": c.commodity,
+                    "Safra": c.safra,
+                    "Volume": c.volume,
+                    "Unidade Medida": c.tipo_medida,
+                    "Moeda": c.moeda,
+                    "Preço Unitário": c.preco_unitario,
+                    "Valor Total": c.valor_total,
+                    "Tipo de Frete": c.tipo_frete,
+                    "Data Entrega": c.data_entrega.strftime('%d/%m/%Y') if c.data_entrega else "",
+                    "Data Pagamento": c.data_pagamento.strftime('%d/%m/%Y') if c.data_pagamento else "",
+                    "Nº Contrato Trading": c.numero_contrato_trading or "",
+                    "Comissão (%)": c.comissao_porcentagem,
+                    "Valor Comissão": c.valor_comissao,
+                    "Observações": c.observacoes or ""
+                })
+            df = pd.DataFrame(dados_contratos)
             if not df.empty:
                 df.to_excel(writer, sheet_name='Contratos', index=False)
                 sheets_escritas += 1
 
+        # 📊 OFERTAS
+        if "ofertas" in tabelas_solicitadas:
+            query = (
+                select(
+                    Oferta,
+                    Produtor.nome.label("produtor_nome"),
+                    Fazenda.nome.label("fazenda_nome"),
+                    Usuario.nome.label("corretor_nome")
+                )
+                .outerjoin(Produtor, Oferta.produtor_id == Produtor.id)
+                .outerjoin(Fazenda, Oferta.fazenda_id == Fazenda.id)
+                .outerjoin(Usuario, Oferta.usuario_id == Usuario.id)
+                .where(Oferta.ativo == True)
+            )
+            if cargo == "corretor":
+                query = query.where(Oferta.usuario_id == usuario_db.id)
+            resultados = db.exec(query).all()
+            
+            dados_ofertas = []
+            for o, p_nome, f_nome, u_nome in resultados:
+                dados_ofertas.append({
+                    "ID Oferta": o.id,
+                    "Tipo": o.tipo_oferta,
+                    "Corretor": u_nome or "N/A",
+                    "Produtor": p_nome or "N/A",
+                    "Fazenda": f_nome or "N/A",
+                    "Produto": o.commodity,
+                    "Volume": o.volume,
+                    "Unidade Medida": o.tipo_medida,
+                    "Preço": o.preco,
+                    "Moeda": o.moeda,
+                    "Data Embarque": o.data_entrega_embarque.strftime('%d/%m/%Y') if o.data_entrega_embarque else "N/A"
+                })
+            df = pd.DataFrame(dados_ofertas)
+            if not df.empty:
+                df.to_excel(writer, sheet_name='Ofertas', index=False)
+                sheets_escritas += 1
+
         # 🌾 PRODUTORES
         if "produtores" in tabelas_solicitadas:
-            query = select(Produtor).where(Produtor.ativo == True)
-            if cargo == "corretor": query = query.where(Produtor.usuario_id == usuario_db.id)
-            produtores = db.exec(query).all()
-            df = pd.DataFrame([p.model_dump() for p in produtores])
+            query = select(Produtor, Usuario.nome.label("corretor_nome")).outerjoin(Usuario, Produtor.usuario_id == Usuario.id).where(Produtor.ativo == True)
+            if cargo == "corretor":
+                query = query.where(Produtor.usuario_id == usuario_db.id)
+            resultados = db.exec(query).all()
+            
+            dados_produtores = []
+            for p, u_nome in resultados:
+                dados_produtores.append({
+                    "ID": p.id,
+                    "Nome do Produtor": p.nome,
+                    "WhatsApp": p.whatsapp or "",
+                    "CPF / CNPJ": p.cpf_cnpj or "",
+                    "Cidade": p.cidade or "",
+                    "UF": p.uf or "",
+                    "Corretor Responsável": u_nome or "N/A"
+                })
+            df = pd.DataFrame(dados_produtores)
             if not df.empty:
                 df.to_excel(writer, sheet_name='Produtores', index=False)
                 sheets_escritas += 1
 
         # 🚜 FAZENDAS
         if "fazendas" in tabelas_solicitadas:
-            query = select(Fazenda).where(Fazenda.ativo == True)
-            if cargo == "corretor": query = query.where(Fazenda.usuario_id == usuario_db.id)
-            fazendas = db.exec(query).all()
-            df = pd.DataFrame([f.model_dump() for f in fazendas])
+            query = select(Fazenda, Produtor.nome.label("produtor_nome"), Usuario.nome.label("corretor_nome")).outerjoin(Produtor, Fazenda.produtor_id == Produtor.id).outerjoin(Usuario, Fazenda.usuario_id == Usuario.id).where(Fazenda.ativo == True)
+            if cargo == "corretor":
+                query = query.where(Fazenda.usuario_id == usuario_db.id)
+            resultados = db.exec(query).all()
+            
+            dados_fazendas = []
+            for f, p_nome, u_nome in resultados:
+                dados_fazendas.append({
+                    "ID": f.id,
+                    "Nome da Fazenda": f.nome,
+                    "Produtor Proprietário": p_nome or "N/A",
+                    "Município": f.municipio or "",
+                    "Inscrição Estadual": f.inscricao_estadual or "",
+                    "Telefone": f.telefone or "",
+                    "Capacidade Carregamento (t/dia)": f.capacidade_carregamento or "",
+                    "Comprimento Balança (m)": f.comprimento_balanca or "",
+                    "Condição do Frete": f.condicao_frete or "",
+                    "Coordenadas": f.coordenadas or "",
+                    "Roteiro / Localização": f.descricao_roteiro or "",
+                    "Cadastrado Por": u_nome or "N/A"
+                })
+            df = pd.DataFrame(dados_fazendas)
             if not df.empty:
                 df.to_excel(writer, sheet_name='Fazendas', index=False)
                 sheets_escritas += 1
 
-        # 🏢 EMPRESAS
+        # 🏢 EMPRESAS (Tradings)
         if "empresas" in tabelas_solicitadas:
             query = select(Empresa).where(Empresa.ativo == True)
             empresas = db.exec(query).all()
-            df = pd.DataFrame([e.model_dump() for e in empresas])
+            dados_empresas = []
+            for e in empresas:
+                dados_empresas.append({
+                    "ID": e.id,
+                    "Razão Social": e.razao_social,
+                    "CNPJ": e.cnpj,
+                    "Inscrição Estadual": e.inscricao_estadual or "",
+                    "Pessoa de Contato": e.contato_nome or "",
+                    "Telefone": e.telefone or "",
+                    "E-mail": e.email or "",
+                    "Endereço": e.endereco or ""
+                })
+            df = pd.DataFrame(dados_empresas)
             if not df.empty:
                 df.to_excel(writer, sheet_name='Empresas', index=False)
                 sheets_escritas += 1
                 
-        # 📊 OFERTAS
-        if "ofertas" in tabelas_solicitadas:
-            query = select(Oferta).where(Oferta.ativo == True)
-            if cargo == "corretor": query = query.where(Oferta.usuario_id == usuario_db.id)
-            ofertas = db.exec(query).all()
-            df = pd.DataFrame([o.model_dump() for o in ofertas])
+        # 🛒 COMPRADORES
+        if "compradores" in tabelas_solicitadas:
+            query = select(Comprador, Empresa.razao_social.label("empresa_nome"), Usuario.nome.label("corretor_nome")).outerjoin(Empresa, Comprador.empresa_id == Empresa.id).outerjoin(Usuario, Comprador.usuario_id == Usuario.id).where(Comprador.ativo == True)
+            if cargo == "corretor":
+                query = query.where(Comprador.usuario_id == usuario_db.id)
+            resultados = db.exec(query).all()
+            dados_compradores = []
+            for comp, emp_nome, u_nome in resultados:
+                dados_compradores.append({
+                    "ID": comp.id,
+                    "Nome do Contato": comp.nome,
+                    "Empresa (Trading)": emp_nome or "N/A",
+                    "E-mail": comp.email,
+                    "Telefone": comp.telefone,
+                    "Cadastrado Por": u_nome or "N/A"
+                })
+            df = pd.DataFrame(dados_compradores)
             if not df.empty:
-                df.to_excel(writer, sheet_name='Ofertas', index=False)
+                df.to_excel(writer, sheet_name='Compradores', index=False)
                 sheets_escritas += 1
 
-        # Segurança: Se a pessoa pedir uma tabela vazia (ou tentar fraudar), retorna um aviso
+        # Se a pessoa pedir uma tabela vazia (ou tentar fraudar), retorna um aviso
         if sheets_escritas == 0:
             pd.DataFrame([{"Aviso": "Nenhum dado encontrado ou sem permissão para exportar."}]).to_excel(writer, sheet_name='Sem Dados', index=False)
+        else:
+            # 📏 Auto-fit nas colunas em todas as abas criadas
+            for ws in writer.book.worksheets:
+                for col in ws.columns:
+                    max_len = max((len(str(cell.value or '')) for cell in col), default=10)
+                    col_letter = col[0].column_letter
+                    ws.column_dimensions[col_letter].width = min(max(max_len + 4, 12), 50)
 
     output.seek(0)
     return StreamingResponse(
