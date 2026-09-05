@@ -30,11 +30,42 @@ load_dotenv()
 
 EVOLUTION_URL = os.getenv('EVOLUTION_URL')
 EVOLUTION_API_KEY = os.getenv('EVOLUTION_API_KEY')
-INSTANCIA = "corretora"
+INSTANCIA_PADRAO = "corretora"
 
 
-def disparar_whatsapp_comprador(telefone: str, mensagem: str):
-    url = f"{EVOLUTION_URL}/message/sendText/{INSTANCIA}"
+def obter_instancia_usuario(usuario) -> str:
+    """Retorna o nome único da instância da Evolution API para o usuário/corretor"""
+    if not usuario:
+        return INSTANCIA_PADRAO
+    user_id = getattr(usuario, "id", None) or (usuario.get("id") if isinstance(usuario, dict) else None)
+    if user_id:
+        return f"corretor_{user_id}"
+    return INSTANCIA_PADRAO
+
+
+def checar_whatsapp_conectado(instancia: str) -> bool:
+    """Consulta a Evolution API para checar se a instância está aberta e autenticada"""
+    if not EVOLUTION_URL or not EVOLUTION_API_KEY:
+        return False
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json"
+    }
+    try:
+        url = f"{EVOLUTION_URL}/instance/connectionState/{instancia}"
+        resposta = requests.get(url, headers=headers, timeout=5)
+        if resposta.status_code == 200:
+            dados = resposta.json()
+            state = dados.get("instance", {}).get("state") if isinstance(dados, dict) else None
+            return state == "open"
+        return False
+    except Exception as e:
+        print(f"Erro ao verificar conexão do WhatsApp ({instancia}): {e}")
+        return False
+
+
+def disparar_whatsapp_comprador(telefone: str, mensagem: str, instancia: str = INSTANCIA_PADRAO):
+    url = f"{EVOLUTION_URL}/message/sendText/{instancia}"
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json"
@@ -49,7 +80,7 @@ def disparar_whatsapp_comprador(telefone: str, mensagem: str):
         resposta = requests.post(url, headers=headers, json=payload)
         return resposta.status_code in [200, 201]
     except Exception as e:
-        print(f"Erro ao enviar WhatsApp: {e}")
+        print(f"Erro ao enviar WhatsApp pela instância {instancia}: {e}")
         return False
 
 # ==========================================
@@ -680,6 +711,18 @@ def criar_contrato(
     contrato.valor_total = contrato.volume * contrato.preco_unitario
     contrato.valor_comissao = contrato.valor_total * (contrato.comissao_porcentagem / 100)
     
+    corretor_contrato = db.get(Usuario, contrato.usuario_id) if contrato.usuario_id else usuario_db
+    instancia_corretor = obter_instancia_usuario(corretor_contrato)
+
+    # 👈 Validação prévia: Impede emissão se houver notificações a disparar e o WhatsApp do corretor não estiver conectado
+    tem_destinatarios = (produtor_db and produtor_db.whatsapp) or (empresa_db and empresa_db.telefone)
+    if tem_destinatarios:
+        if not checar_whatsapp_conectado(instancia_corretor):
+            raise HTTPException(
+                status_code=400, 
+                detail="Seu WhatsApp não está conectado. Conecte seu aparelho em Configurações > WhatsApp antes de emitir o contrato e disparar as notificações."
+            )
+
     db.add(contrato)
     db.flush()
     log = Historico(usuario_id=usuario_db.id, tabela_afetada='Contratos', id_afetado=contrato.id, acao='Adicionar', detalhes=f'O contrato de id {contrato.id} foi adicionado')
@@ -687,8 +730,8 @@ def criar_contrato(
     db.commit()
     db.refresh(contrato)
     
-    nome_corretor = usuario_db.nome if usuario_db else "Corretor"
-    telefone_corretor = usuario_db.telefone if usuario_db else ""
+    nome_corretor = corretor_contrato.nome if corretor_contrato else "Corretor"
+    telefone_corretor = corretor_contrato.telefone if corretor_contrato else ""
 
     # 👈 2. Disparo do Produtor em segundo plano
     if produtor_db and produtor_db.whatsapp:
@@ -703,7 +746,7 @@ def criar_contrato(
             f"👨‍💼 *Corretor responsável:* {nome_corretor}\n"
             f"Agradecemos a confiança e ótimos negócios!"
         )
-        background_tasks.add_task(disparar_whatsapp_comprador, produtor_db.whatsapp, msg_produtor)
+        background_tasks.add_task(disparar_whatsapp_comprador, produtor_db.whatsapp, msg_produtor, instancia_corretor)
 
     # 👈 3. Disparo da Empresa em segundo plano
     if empresa_db and empresa_db.telefone:
@@ -722,7 +765,7 @@ def criar_contrato(
             f"📞 *Contato do Corretor:* {telefone_corretor}\n\n"
             f"Em breve enviaremos a documentação oficial."
         )
-        background_tasks.add_task(disparar_whatsapp_comprador, empresa_db.telefone, msg_empresa)
+        background_tasks.add_task(disparar_whatsapp_comprador, empresa_db.telefone, msg_empresa, instancia_corretor)
         
     return {"msg": "Contrato emitido e notificações enviadas com sucesso!", "dados": contrato}
 
@@ -919,6 +962,16 @@ def criar_oferta(
         if fazenda_db.usuario_id != usuario_db.id:
             raise HTTPException(status_code=403, detail="Fazenda não pertence a você.")
         
+    instancia_corretor = obter_instancia_usuario(usuario_db)
+
+    # 👈 Validação prévia: Impede disparo se houver compradores selecionados e o WhatsApp do corretor não estiver conectado
+    if dados.compradores_ids:
+        if not checar_whatsapp_conectado(instancia_corretor):
+            raise HTTPException(
+                status_code=400,
+                detail="Seu WhatsApp não está conectado. Conecte seu aparelho em Configurações > WhatsApp antes de disparar ofertas."
+            )
+
     nova_oferta = Oferta(
         usuario_id=usuario_db.id,
         produtor_id=dados.produtor_id,
@@ -963,7 +1016,7 @@ def criar_oferta(
                 # Segurança: Se for corretor, só pode mandar msg pros seus próprios compradores
                 if usuario_logado.get("cargo") == "corretor" and comprador.usuario_id != usuario_db.id:
                     continue
-                background_tasks.add_task(disparar_whatsapp_comprador, comprador.telefone, texto_mensagem)
+                background_tasks.add_task(disparar_whatsapp_comprador, comprador.telefone, texto_mensagem, instancia_corretor)
 
     return nova_oferta
 
@@ -1506,10 +1559,17 @@ def redefinir_senha(request: Request, dados: RedefinirSenhaRequest, db: Session 
     return {"msg": "Senha redefinida com sucesso! Faça login com a nova senha."}
 
 @app.get("/conectar-whatsapp", tags=["WhatsApp"])
-def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
-    """Gera o QR Code do WhatsApp em formato JSON (Apenas Admin e Gerente)"""
-    if usuario_logado.get("cargo") not in ["admin", "gerente"]:
-        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores ou gerentes.")
+def conectar_whatsapp(
+    instancia: Optional[str] = None,
+    session: Session = Depends(get_session),
+    usuario_logado=Depends(usuario_atual)
+):
+    """Gera o QR Code do WhatsApp para a instância do usuário logado"""
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    if instancia and usuario_logado.get("cargo") in ["admin", "gerente"]:
+        nome_instancia = instancia
+    else:
+        nome_instancia = obter_instancia_usuario(usuario_db)
 
     headers = {
         "apikey": EVOLUTION_API_KEY,
@@ -1519,13 +1579,13 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
     try:
         # 1. Tenta CRIAR a nova instância
         url_create = f"{EVOLUTION_URL}/instance/create"
-        payload = {"instanceName": INSTANCIA, "qrcode": True, "integration": "WHATSAPP-BAILEYS"}
+        payload = {"instanceName": nome_instancia, "qrcode": True, "integration": "WHATSAPP-BAILEYS"}
         resposta = requests.post(url_create, headers=headers, json=payload)
         dados = resposta.json()
         
         # 2. Se a instância já existir, a Evolution devolve erro 403. Aí tentamos o CONNECT.
         if resposta.status_code == 403 or (isinstance(dados, dict) and dados.get("error") == "Instance already exists"):
-            url_connect = f"{EVOLUTION_URL}/instance/connect/{INSTANCIA}"
+            url_connect = f"{EVOLUTION_URL}/instance/connect/{nome_instancia}"
             resposta = requests.get(url_connect, headers=headers)
             dados = resposta.json()
 
@@ -1540,11 +1600,12 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
         if imagem_base64:
             return {
                 "status": "aguardando_leitura",
+                "instancia": nome_instancia,
                 "qrcode": imagem_base64
             }
         else:
             # 4. Checa o estado da conexão na Evolution API
-            state_url = f"{EVOLUTION_URL}/instance/connectionState/{INSTANCIA}"
+            state_url = f"{EVOLUTION_URL}/instance/connectionState/{nome_instancia}"
             state_res = requests.get(state_url, headers=headers)
             state_data = state_res.json() if state_res.status_code == 200 else {}
             state = state_data.get("instance", {}).get("state") if isinstance(state_data, dict) else None
@@ -1552,11 +1613,13 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
             if state == "open":
                 return {
                     "status": "conectado",
+                    "instancia": nome_instancia,
                     "detalhes": state_data
                 }
             else:
                 return {
                     "status": "indisponivel",
+                    "instancia": nome_instancia,
                     "detalhes": dados
                 }
             
@@ -1564,10 +1627,17 @@ def conectar_whatsapp(usuario_logado=Depends(usuario_atual)):
         raise HTTPException(status_code=500, detail=f"Erro ao conectar com a Evolution API: {str(e)}")
 
 @app.post("/desconectar-whatsapp", tags=["WhatsApp"])
-def desconectar_whatsapp(usuario_logado=Depends(usuario_atual)):
-    """Desconecta a instância do WhatsApp na Evolution API para permitir novo pareamento (Admin e Gerente)"""
-    if usuario_logado.get("cargo") not in ["admin", "gerente"]:
-        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores ou gerentes.")
+def desconectar_whatsapp(
+    instancia: Optional[str] = None,
+    session: Session = Depends(get_session),
+    usuario_logado=Depends(usuario_atual)
+):
+    """Desconecta a instância do WhatsApp na Evolution API para permitir novo pareamento"""
+    usuario_db = obter_usuario_db(usuario_logado, session)
+    if instancia and usuario_logado.get("cargo") in ["admin", "gerente"]:
+        nome_instancia = instancia
+    else:
+        nome_instancia = obter_instancia_usuario(usuario_db)
 
     headers = {
         "apikey": EVOLUTION_API_KEY,
@@ -1575,10 +1645,11 @@ def desconectar_whatsapp(usuario_logado=Depends(usuario_atual)):
     }
     
     try:
-        url_logout = f"{EVOLUTION_URL}/instance/logout/{INSTANCIA}"
+        url_logout = f"{EVOLUTION_URL}/instance/logout/{nome_instancia}"
         resposta = requests.delete(url_logout, headers=headers)
         return {
             "status": "desconectado",
+            "instancia": nome_instancia,
             "detalhes": resposta.json() if resposta.content else {}
         }
     except Exception as e:
