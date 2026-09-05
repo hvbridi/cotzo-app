@@ -178,6 +178,7 @@ class OfertaUpdate(BaseModel):
     tipo_medida: Optional[str] = None
     preco: Optional[float] = None
     moeda: Optional[str] = None
+    tipo_frete: Optional[str] = None
     data_entrega_embarque: Optional[date] = None
 
 class CompradorUpdate(BaseModel):
@@ -886,6 +887,7 @@ class OfertaCreate(BaseModel):
     tipo_medida: str = "Sacas"
     preco: float
     moeda: str = "BRL"
+    tipo_frete: str = "FOB Fazenda"
     data_entrega_embarque: date
     compradores_ids: List[int] = []
 
@@ -927,6 +929,7 @@ def criar_oferta(
         tipo_medida=dados.tipo_medida,
         preco=dados.preco,
         moeda=dados.moeda,
+        tipo_frete=dados.tipo_frete,
         data_entrega_embarque=dados.data_entrega_embarque
     )
     
@@ -946,6 +949,7 @@ def criar_oferta(
             f"🚜 *Fazenda:* {fazenda_nome}\n"
             f"📦 *Volume:* {dados.volume:,} {dados.tipo_medida.lower()}\n"
             f"💰 *Preço:* {dados.moeda} {dados.preco:,.2f}\n"
+            f"🚚 *Frete:* {dados.tipo_frete}\n"
             f"📅 *Embarque:* {dados.data_entrega_embarque.strftime('%d/%m/%Y')}\n\n"
             f"👨‍💼 *Corretor:* {usuario_db.nome}\n"
             f"📞 *WhatsApp:* {usuario_db.telefone}\n\n"
@@ -1014,7 +1018,7 @@ def atualizar_oferta(oferta_id: int, dados_atualizados: OfertaUpdate, db: Sessio
     if usuario_logado.get("cargo") == "corretor" and oferta.usuario_id != usuario_db.id:
         raise HTTPException(status_code=403, detail="Permissão negada.")
         
-    campos_permitidos = ['tipo_oferta', "commodity", "volume", "tipo_medida", "preco", "moeda", "data_entrega_embarque"]
+    campos_permitidos = ['tipo_oferta', "commodity", "volume", "tipo_medida", "preco", "moeda", "tipo_frete", "data_entrega_embarque"]
     for key, value in dados_atualizados.model_dump(exclude_unset=True).items():
         if hasattr(oferta, key) and key in campos_permitidos:
             setattr(oferta, key, value)
@@ -1305,6 +1309,7 @@ def exportar_dados_para_excel(
                     "Unidade Medida": o.tipo_medida,
                     "Preço": o.preco,
                     "Moeda": o.moeda,
+                    "Condição de Frete": getattr(o, "tipo_frete", "FOB Fazenda") or "FOB Fazenda",
                     "Data Embarque": o.data_entrega_embarque.strftime('%d/%m/%Y') if o.data_entrega_embarque else "N/A"
                 })
             df = pd.DataFrame(dados_ofertas)

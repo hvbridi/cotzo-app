@@ -79,6 +79,7 @@ class Oferta(SQLModel, table=True):
     tipo_medida: str = Field(default="Sacas", description="'Sacas' ou 'Toneladas'")
     preco: float = Field(description="Preço ofertado por saca")
     moeda: str = Field(default="BRL", max_length=3, description="Moeda da negociação, ex: BRL, USD")
+    tipo_frete: str = Field(default="FOB Fazenda", description="'FOB Fazenda' ou 'CIF Armazém'")
     data_entrega_embarque: date = Field(description="Data limite ou programada para entrega/embarque")
     ativo: bool = Field(default=True)
     
